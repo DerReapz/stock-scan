@@ -5,6 +5,7 @@ __pycache__/
 .env
 stockscan.toml
 dist/
+build/
 .pytest_cache/
 .ruff_cache/
 uv.lock

@@ -121,6 +121,27 @@ Precedence: CLI flags > environment variables > `stockscan.toml` > defaults.
 Copy `stockscan.example.toml` to `stockscan.toml` to change engine parameters,
 default timeframe/provider/filter, or Alpaca/Polygon feed class.
 
+## Standalone executable (.exe)
+
+The scanner compiles to a single self-contained executable — no Python
+required on the target machine:
+
+```bash
+pip install -e ".[build]"        # or: uv pip install -e ".[build]"
+pyinstaller stockscan.spec       # → dist/stockscan  (dist/stockscan.exe on Windows)
+```
+
+PyInstaller builds for the platform it runs on: run the build on Windows to
+get `stockscan.exe` (Linux/macOS produce native binaries the same way). The
+executable embeds the dashboard front end, so `stockscan serve` works from
+the single file; `.env`, `stockscan.toml`, watchlists, and `--pine` scripts
+are read from the directory you run it in, exactly like the pip install.
+
+CI does this automatically: the `build` workflow
+(`.github/workflows/build.yml`) runs tests on every push/PR, and on version
+tags (`v*`) or manual dispatch it builds Windows/Linux/macOS executables,
+uploads them as artifacts, and attaches them to the GitHub release.
+
 ## Development
 
 ```bash
