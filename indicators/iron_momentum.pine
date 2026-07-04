@@ -1,0 +1,208 @@
+//@version=6
+// ─────────────────────────────────────────────────────────────────────────────
+//  Momentum Band ±50  (MB-50)  —  v1.3
+//
+//  Pipeline:
+//    1. Raw momentum ratio (two engines, both computed unconditionally,
+//       post-call selection):
+//         Velocity vs 50-avg : (close - close[momLen]) / SMA(|change|, benchLen)
+//         Position vs 50 SMA : (close - SMA(benchLen)) / stdev(close, benchLen)
+//    2. Bounded squash:  score = 50 * tanh(ratio / sensitivity)   → hard ±50
+//    3. Optional EMA smoothing on the score (post-squash, bounds preserved)
+//    4. Render: zero-anchored band, vertical value-gradient fill
+//         positive → tan, deepest tint at +50, transparent at 0
+//         negative → grey, deepest tint at -50, transparent at 0
+//    5. Volume stars: momentum beyond the deadband + RVOL >= trigger
+//         bull → blue ★ on the top rail, bear → purple ★ on the bottom rail
+//         Optional RTH-only mode: extended-hours bars are excluded from the
+//         RVOL window (FIFO of the last N regular-session volumes) and cannot
+//         print stars. Uses session.* built-ins → automatic no-op on daily+
+//         charts and on charts without ETH bars.
+//    6. Screener exports (data window):
+//         MB • State ladder:  +2 strong bull (score >= strong threshold)
+//                             +1 bull        (score >  deadband)
+//                              0 neutral
+//                             -1 bear        (score < -deadband)
+//                             -2 strong bear (score <= -strong threshold)
+//         plus Strength %, Raw ratio, RVOL, Star events (+1/0/-1)
+//
+//  Conventions: no request.* calls (Pine-Screener-safe), stars and alerts
+//  gated on barstate.isconfirmed, table gated on barstate.islast. The RTH
+//  volume queue mutates only on confirmed bars (rollback-safe var array).
+// ─────────────────────────────────────────────────────────────────────────────
+indicator("Momentum Band ±50", "Iron Momentum", overlay = false, precision = 1)
+
+// ── Inputs ───────────────────────────────────────────────────────────────────
+grpEng = "Engine"
+engMode  = input.string("Velocity vs 50-avg", "Benchmark mode",
+     options = ["Velocity vs 50-avg", "Position vs 50 SMA"], group = grpEng,
+     tooltip = "Velocity: N-bar price change measured against the 50-bar average of its own magnitude.\nPosition: volatility-normalised distance of price from the 50-bar SMA (z-score).")
+momLen   = input.int(10, "Momentum length (bars)", minval = 1, group = grpEng,
+     tooltip = "Velocity mode only: lookback for the raw price change.")
+benchLen = input.int(50, "Benchmark length (bars)", minval = 5, group = grpEng,
+     tooltip = "The 50D anchor. On a daily chart 50 bars = 50 days.")
+sens     = input.float(2.0, "Sensitivity", minval = 0.5, maxval = 5.0, step = 0.25, group = grpEng,
+     tooltip = "Divisor inside the tanh squash. Lower = score reaches the ±50 rails faster.")
+smooth   = input.int(3, "Smoothing (EMA, 1 = off)", minval = 1, group = grpEng)
+
+grpVis = "Visuals"
+tanCol   = input.color(#C49A6C, "Positive band (tan)", group = grpVis)
+greyCol  = input.color(#9098A0, "Negative band (grey)", group = grpVis)
+maxTint  = input.int(30, "Transparency at full strength", minval = 0, maxval = 95, group = grpVis,
+     tooltip = "Fill transparency at ±50. Fill always fades to fully transparent at zero.")
+showTbl  = input.bool(true, "Show state panel", group = grpVis)
+tblPos   = input.string("Top right", "Panel position",
+     options = ["Top right", "Top left", "Bottom right", "Bottom left"], group = grpVis)
+
+grpSig = "Signals"
+deadband  = input.float(5.0,  "Neutral deadband (±)",  minval = 0.0,  maxval = 25.0, step = 0.5, group = grpSig)
+strongLvl = input.float(30.0, "Strong threshold (±)",  minval = 10.0, maxval = 48.0, step = 1.0, group = grpSig,
+     tooltip = "Boundary between the bull/bear tier and the strong tier. Keep above the deadband; the script clamps it there if not.")
+
+grpStar = "Volume stars"
+showStars = input.bool(true, "Show volume stars", group = grpStar)
+useETH    = input.bool(false, "Include extended-hours volume", group = grpStar,
+     tooltip = "Off (recommended on ETH-enabled intraday charts): premarket/after-hours bars are excluded from the RVOL average and cannot print stars.\nOn: every chart bar counts (v1.1 behaviour).\nNo effect on daily+ charts or charts without ETH bars.")
+rvolLen   = input.int(20, "RVOL average length", minval = 2, group = grpStar,
+     tooltip = "Relative volume = volume / average volume over this many qualifying bars.")
+rvolMult  = input.float(2.0, "RVOL trigger (x average)", minval = 1.0, step = 0.25, group = grpStar)
+freshOnly = input.bool(false, "New signals only", group = grpStar,
+     tooltip = "On: a star prints only on the first qualifying bar of a run.\nOff: every qualifying bar prints a star.")
+starUpCol = input.color(#3B82F6, "Bull star (blue)",   group = grpStar)
+starDnCol = input.color(#A855F7, "Bear star (purple)", group = grpStar)
+
+// ── Engine ───────────────────────────────────────────────────────────────────
+f_tanh(float x) =>
+    xx = math.max(-20.0, math.min(20.0, x))
+    e  = math.exp(2.0 * xx)
+    (e - 1.0) / (e + 1.0)
+
+// Both engines computed unconditionally; selection after the calls.
+momV  = close - close[momLen]
+normV = ta.sma(math.abs(momV), benchLen)
+rawV  = normV > 0 ? momV / normV : 0.0
+
+baseP = ta.sma(close, benchLen)
+volP  = ta.stdev(close, benchLen)
+rawP  = volP > 0 ? (close - baseP) / volP : 0.0
+
+raw      = engMode == "Velocity vs 50-avg" ? rawV : rawP
+scoreRaw = 50.0 * f_tanh(raw / sens)
+score    = ta.ema(scoreRaw, smooth)          // length 1 = identity, i.e. off
+
+// ── State ladder ─────────────────────────────────────────────────────────────
+// +2 strong bull | +1 bull | 0 neutral | -1 bear | -2 strong bear
+strongEff   = math.max(strongLvl, deadband)  // guard: strong tier never inside the deadband
+stateLadder = score >= strongEff ? 2 :
+     score >  deadband  ?  1 :
+     score <= -strongEff ? -2 :
+     score < -deadband  ? -1 : 0
+dirState    = stateLadder > 0 ? 1 : stateLadder < 0 ? -1 : 0
+strengthPct = math.abs(score) / 50.0 * 100.0
+
+// ── Volume stars ─────────────────────────────────────────────────────────────
+isRTH  = session.ismarket                    // always true on non-intraday charts
+sessOK = useETH or isRTH
+
+// RTH-only rolling window: FIFO of the last rvolLen regular-session volumes.
+// Pushed only on confirmed bars → intrabar mutations are rolled back safely.
+var array<float> rthVolQ = array.new<float>()
+if barstate.isconfirmed and isRTH
+    array.push(rthVolQ, volume)
+    if array.size(rthVolQ) > rvolLen
+        array.shift(rthVolQ)
+
+avgVolAll = ta.sma(volume, rvolLen)          // unconditional, keeps series consistent
+avgVolRTH = array.size(rthVolQ) >= rvolLen ? array.avg(rthVolQ) : na
+avgVol    = useETH ? avgVolAll : avgVolRTH
+
+rvol     = not na(avgVol) and avgVol > 0 ? volume / avgVol : na
+volSurge = sessOK and not na(rvol) and rvol >= rvolMult
+
+// Any bull/bear tier qualifies for a star (strong tier not required).
+starUpCond = dirState == 1  and volSurge
+starDnCond = dirState == -1 and volSurge
+
+// Events: confirmed-bar gated, optional first-bar-of-run dedup.
+starUpEvt = barstate.isconfirmed and starUpCond and (not freshOnly or not starUpCond[1])
+starDnEvt = barstate.isconfirmed and starDnCond and (not freshOnly or not starDnCond[1])
+
+// ── Render ───────────────────────────────────────────────────────────────────
+posSeg = math.max(score, 0.0)
+negSeg = math.min(score, 0.0)
+
+lineCol = score >= 0 ?
+     color.from_gradient(score,   0,  50, color.new(tanCol,  60), color.new(tanCol,  0)) :
+     color.from_gradient(score, -50,   0, color.new(greyCol,  0), color.new(greyCol, 60))
+
+pScore = plot(score,  "MB • Score", color = lineCol, linewidth = 2)
+pPos   = plot(posSeg, "· band edge (+)", color = na, editable = false)
+pNeg   = plot(negSeg, "· band edge (-)", color = na, editable = false)
+pZero  = plot(0.0,    "· zero anchor",   color = na, editable = false)
+
+fill(pZero, pPos, top_value =  50.0, bottom_value =   0.0,
+     top_color    = color.new(tanCol,  maxTint), bottom_color = color.new(tanCol,  100),
+     title = "Positive band")
+fill(pZero, pNeg, top_value =   0.0, bottom_value = -50.0,
+     top_color    = color.new(greyCol, 100),     bottom_color = color.new(greyCol, maxTint),
+     title = "Negative band")
+
+hline(0,   "Zero", color = color.new(color.gray, 40))
+hline(25,  "+25",  color = color.new(color.gray, 80), linestyle = hline.style_dotted)
+hline(-25, "-25",  color = color.new(color.gray, 80), linestyle = hline.style_dotted)
+hline(50,  "+50",  color = color.new(color.gray, 88))
+hline(-50, "-50",  color = color.new(color.gray, 88))
+
+plotchar(showStars and starUpEvt, "MB • Bull star", "★", location.top,
+     color = starUpCol, size = size.small)
+plotchar(showStars and starDnEvt, "MB • Bear star", "★", location.bottom,
+     color = starDnCol, size = size.small)
+
+// ── Data-window exports (Pine Screener stacking) ─────────────────────────────
+// State filter recipes:  ==2 strong bull · >=1 any bull · ==1 bull only
+//                        ==-1 bear only · <=-1 any bear · ==-2 strong bear
+plot(stateLadder, "MB • State",      display = display.data_window)
+plot(strengthPct, "MB • Strength %", display = display.data_window)
+plot(raw,         "MB • Raw ratio",  display = display.data_window)
+plot(rvol,        "MB • RVOL",       display = display.data_window)
+plot(starUpEvt ? 1 : starDnEvt ? -1 : 0, "MB • Star", display = display.data_window)
+
+// ── State panel ──────────────────────────────────────────────────────────────
+f_pos(string p) =>
+    p == "Top right" ? position.top_right : p == "Top left" ? position.top_left :
+     p == "Bottom right" ? position.bottom_right : position.bottom_left
+
+var table tbl = table.new(f_pos(tblPos), 2, 4, bgcolor = color.new(chart.bg_color, 15))
+
+if showTbl and barstate.islast
+    stTxt = stateLadder ==  2 ? "▲▲ Strong Bull" :
+         stateLadder ==  1 ? "▲ Bull" :
+         stateLadder == -1 ? "▼ Bear" :
+         stateLadder == -2 ? "▼▼ Strong Bear" : "— Neutral"
+    stCol    = dirState == 1 ? tanCol : dirState == -1 ? greyCol : color.gray
+    scoreTxt = (score > 0 ? "+" : "") + str.tostring(score, "0.0")
+    rvolTxt  = na(rvol) ? "n/a" : str.tostring(rvol, "0.0") + "x" + (isRTH ? "" : " (eth)")
+    rvolCol  = volSurge ? (dirState == 1 ? starUpCol : dirState == -1 ? starDnCol : chart.fg_color) : color.gray
+
+    table.cell(tbl, 0, 0, "Score", text_color = color.gray,     text_size = size.small)
+    table.cell(tbl, 1, 0, scoreTxt, text_color = stCol,         text_size = size.small)
+    table.cell(tbl, 0, 1, "State", text_color = color.gray,     text_size = size.small)
+    table.cell(tbl, 1, 1, stTxt,   text_color = stCol,          text_size = size.small)
+    table.cell(tbl, 0, 2, "RVOL",  text_color = color.gray,     text_size = size.small)
+    table.cell(tbl, 1, 2, rvolTxt, text_color = rvolCol,        text_size = size.small)
+    table.cell(tbl, 0, 3, "Mode",  text_color = color.gray,     text_size = size.small)
+    table.cell(tbl, 1, 3, engMode == "Velocity vs 50-avg" ? "Velocity" : "Position",
+     text_color = chart.fg_color, text_size = size.small)
+
+// ── Alerts (confirmed-bar gated) ─────────────────────────────────────────────
+crossUp  = ta.crossover(score, 0.0)
+crossDn  = ta.crossunder(score, 0.0)
+strongUp = ta.crossover(score, strongEff)
+strongDn = ta.crossunder(score, -strongEff)
+
+alertcondition(barstate.isconfirmed and crossUp,  "MB-50: Cross Up",    "Momentum crossed above zero (confirmed bar)")
+alertcondition(barstate.isconfirmed and crossDn,  "MB-50: Cross Down",  "Momentum crossed below zero (confirmed bar)")
+alertcondition(barstate.isconfirmed and strongUp, "MB-50: Strong Up",   "Momentum entered the strong bull tier (confirmed bar)")
+alertcondition(barstate.isconfirmed and strongDn, "MB-50: Strong Down", "Momentum entered the strong bear tier (confirmed bar)")
+alertcondition(starUpEvt, "MB-50: Bull Star", "Upward momentum on relative volume above trigger (confirmed bar)")
+alertcondition(starDnEvt, "MB-50: Bear Star", "Downward momentum on relative volume above trigger (confirmed bar)")

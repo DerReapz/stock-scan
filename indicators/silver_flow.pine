@@ -1,0 +1,250 @@
+//@version=6
+indicator("Institutional VS Retail", shorttitle="Silver Flow", overlay=false, precision=1)
+
+// ─────────────────────────────────────────────────────────────
+// Hypothesis under test: "retail vs institutional" = size-gated
+// dollar-volume share. In Share mode, mirror symmetry around 50
+// is guaranteed by normalization (stage 5), so the discriminating
+// evidence vs the reference chart is flip timing and dominance-
+// band width — NOT the mirror itself.
+// Load on the reference symbol at Weekly to compare.
+// ─────────────────────────────────────────────────────────────
+
+// ── Flow partition ───────────────────────────────────────────
+grpP = "Flow partition"
+weightMode = input.string("Participation", title="Weighting mode", options=["Participation", "Directional (bull share)"], group=grpP, tooltip="Participation: unsigned notional — measures who traded. Directional: weights each bar by gap-aware CLV bull fraction — measures whose buying dominates.")
+scaleMode  = input.string("Share (mirrored)", title="Scale mode", options=["Share (mirrored)", "Independent (0-100)", "Signed (-100 to +100)"], group=grpP, tooltip="Share: complementary halves of one partitioned quantity — matches the reference; crossings pinned at 50. Independent: each bucket percentile-ranked vs its own history — both high = broad participation, both low = dead tape. Signed: each bucket's net CLV flow, −100 (all selling) to +100 (all buying) — direction per cohort; divergence and agreement readable as geometry around zero.")
+
+// ── Size gate ────────────────────────────────────────────────
+grpG = "Size gate"
+gateMethod = input.string("Percentile", title="Gate method", options=["Percentile", "Z-Score"], group=grpG)
+gateLen    = input.int(100, title="Gate window (bars)", minval=20, group=grpG)
+retailPct  = input.float(50.0, title="Retail ≤ percentile", minval=0.0, maxval=100.0, group=grpG)
+instPct    = input.float(75.0, title="Institutional ≥ percentile", minval=0.0, maxval=100.0, group=grpG)
+retailZ    = input.float(0.0, title="Retail ≤ z-score", group=grpG)
+instZ      = input.float(1.0, title="Institutional ≥ z-score", group=grpG)
+softGate   = input.bool(true, title="Pro-rate middle band (soft gate)", group=grpG, tooltip="ON: linear ramp between thresholds — every bar contributes fractionally to both buckets. OFF: hard gates — middle band discarded entirely.")
+
+// ── Accumulation & smoothing ─────────────────────────────────
+grpA = "Accumulation & smoothing"
+accumLen     = input.int(13, title="Accumulation window (bars)", minval=1, group=grpA)
+smoothLen    = input.int(5, title="EMA smoothing length", minval=1, group=grpA)
+doubleSmooth = input.bool(false, title="Double smooth", group=grpA)
+
+// ── Exceptional prints ───────────────────────────────────────
+grpX = "Exceptional prints"
+excPct = input.float(98.0, title="Exceptional ≥ percentile", minval=50.0, maxval=100.0, group=grpX)
+excZ   = input.float(2.5, title="Exceptional ≥ z-score", group=grpX, tooltip="Active threshold follows the gate method: percentile when gate = Percentile, z when gate = Z-Score.")
+
+// ── Flow bias detection ──────────────────────────────────────
+grpAD = "Flow bias detection"
+showAccDist = input.bool(true, title="Acc/Dist markers", group=grpAD)
+divLen      = input.int(8, title="Detection window (bars)", minval=2, group=grpAD)
+lowVolPct   = input.float(40.0, title="Quiet tape ≤ median vol percentile", minval=0.0, maxval=100.0, group=grpAD)
+biasThr     = input.float(0.25, title="Institutional CLV bias threshold", minval=0.0, maxval=1.0, step=0.05, group=grpAD, tooltip="Minimum signed institutional flow bias over the window. 0.25 ≈ 62.5% of gated notional on one side.")
+edgeOnly    = input.bool(true, title="Mark first bar only", group=grpAD, tooltip="ON: one marker at the start of each qualifying phase. OFF: marker on every qualifying bar — shows phase duration.")
+showConf     = input.bool(true, title="Confluence markers", group=grpAD)
+activeVolPct = input.float(60.0, title="Active tape ≥ median vol percentile (0 = off)", minval=0.0, maxval=100.0, group=grpAD, tooltip="Confluence requires an active tape by default — agreement on a dead tape is drift, on a busy tape it's a campaign. Set 0 to disable the volume condition.")
+confBg       = input.bool(false, title="Confluence background tint", group=grpAD)
+
+// ── Display ──────────────────────────────────────────────────
+grpD = "Display"
+showStars = input.bool(false, title="Dominance-flip markers", group=grpD)
+showFill  = input.bool(true, title="Dominance fill", group=grpD)
+dirTint   = input.bool(true, title="Color lines by net flow direction", group=grpD, tooltip="Gold → red while institutions are net selling; white → orange while retail is net selling. Direction as a color channel — position stays on the selected scale.")
+showPanel = input.bool(true, title="State panel", group=grpD)
+
+// ── 1 · Notional ─────────────────────────────────────────────
+dv = volume * hlc3
+
+// ── 2 · Size gate (unconditional calls, post-call selection) ─
+pr = ta.percentrank(dv, gateLen)
+mu = ta.sma(dv, gateLen)
+sd = ta.stdev(dv, gateLen)
+z  = sd > 0 ? (dv - mu) / sd : 0.0
+
+usePct  = gateMethod == "Percentile"
+gateVal = usePct ? pr : z
+loThr   = usePct ? retailPct : retailZ
+hiThr   = usePct ? instPct   : instZ
+
+span    = hiThr - loThr
+ramp    = span > 0 ? math.max(0.0, math.min(1.0, (gateVal - loThr) / span)) : (gateVal >= hiThr ? 1.0 : 0.0)
+instW   = softGate ? ramp       : (gateVal >= hiThr ? 1.0 : 0.0)
+retailW = softGate ? 1.0 - ramp : (gateVal <= loThr ? 1.0 : 0.0)
+
+// ── 3 · Gap-aware CLV ────────────────────────────────────────
+// Feeds: dirW (Directional weighting), both fast detector biases,
+// the slow signed-mode lines, and the direction tint.
+prevC    = nz(close[1], close)
+hiT      = math.max(high, prevC)
+loT      = math.min(low, prevC)
+trng     = hiT - loT
+clv      = trng > 0 ? ((close - loT) - (hiT - close)) / trng : 0.0
+bullFrac = (clv + 1.0) / 2.0
+dirW     = weightMode == "Participation" ? 1.0 : bullFrac
+
+// ── 4 · Bucket accumulation ──────────────────────────────────
+instRaw   = math.sum(dv * instW   * dirW, accumLen)
+retailRaw = math.sum(dv * retailW * dirW, accumLen)
+
+// ── 5 · Normalization ────────────────────────────────────────
+// Three projections of the same partitioned flow:
+//   Share       — relative participation (no direction, no level)
+//   Independent — absolute participation per cohort (no direction)
+//   Signed      — net direction per cohort (no magnitude)
+// All computed unconditionally, selected after.
+total          = instRaw + retailRaw
+retailShareRaw = total > 0 ? 100.0 * retailRaw / total : 50.0
+retailIndRaw   = ta.percentrank(retailRaw, gateLen)
+instIndRaw     = ta.percentrank(instRaw, gateLen)
+
+// Signed mode: slow bias over accumLen (markers use fast divLen)
+instGrossL   = math.sum(dv * instW, accumLen)
+retailGrossL = math.sum(dv * retailW, accumLen)
+instNetL     = math.sum(dv * instW * clv, accumLen)
+retailNetL   = math.sum(dv * retailW * clv, accumLen)
+retailSgnRaw = retailGrossL > 0 ? 100.0 * retailNetL / retailGrossL : 0.0
+instSgnRaw   = instGrossL   > 0 ? 100.0 * instNetL   / instGrossL   : 0.0
+
+useShare  = scaleMode == "Share (mirrored)"
+useSigned = scaleMode == "Signed (-100 to +100)"
+rawR = useShare ? retailShareRaw : useSigned ? retailSgnRaw : retailIndRaw
+rawI = useShare ? 100.0 - retailShareRaw : useSigned ? instSgnRaw : instIndRaw
+
+// ── 6 · Smoothing ────────────────────────────────────────────
+// EMA is linear, so in Share mode instShare remains exactly
+// 100 − retailShare after smoothing.
+r1 = ta.ema(rawR, smoothLen)
+r2 = ta.ema(r1, smoothLen)
+i1 = ta.ema(rawI, smoothLen)
+i2 = ta.ema(i1, smoothLen)
+retailShare = doubleSmooth ? r2 : r1
+instShare   = doubleSmooth ? i2 : i1
+
+// ── Signal layer ─────────────────────────────────────────────
+flipToRetail = ta.crossover(retailShare, instShare)
+flipToInst   = ta.crossunder(retailShare, instShare)
+flip          = flipToRetail or flipToInst
+regime        = retailShare > instShare ? 1 : retailShare < instShare ? -1 : 0
+barsSinceFlip = nz(ta.barssince(flip))
+
+// ── Accumulation / Distribution detection ────────────────────
+// Divergence layer: price drifts one way on a quiet tape while
+// SIGNED institutional flow points the other way. Uses clv
+// directly (signed), so it is orthogonal to the share lines
+// (unsigned in Participation mode, bull-share in Directional).
+medVolPct = ta.median(pr, divLen)
+priceChg  = close - close[divLen]
+
+instNet   = math.sum(dv * instW * clv, divLen)
+instGross = math.sum(dv * instW, divLen)
+instBias  = instGross > 0 ? instNet / instGross : 0.0
+
+quietTape = medVolPct <= lowVolPct
+accumRaw  = priceChg < 0 and quietTape and instBias >=  biasThr
+distRaw   = priceChg > 0 and quietTape and instBias <= -biasThr
+accumSig  = edgeOnly ? accumRaw and not accumRaw[1] : accumRaw
+distSig   = edgeOnly ? distRaw  and not distRaw[1]  : distRaw
+
+// ── Confluence detection ─────────────────────────────────────
+// clv is shared per bar; the two biases can only differ through
+// the size weights. Agreement therefore means direction is
+// size-independent — the whole tape leans one way. Confirmation
+// signal (markup / markdown), vs the anticipatory acc/dist stars.
+retailNet   = math.sum(dv * retailW * clv, divLen)
+retailGross = math.sum(dv * retailW, divLen)
+retailBias  = retailGross > 0 ? retailNet / retailGross : 0.0
+
+activeTape  = activeVolPct <= 0.0 ? true : medVolPct >= activeVolPct
+bullConfRaw = instBias >=  biasThr and retailBias >=  biasThr and activeTape
+bearConfRaw = instBias <= -biasThr and retailBias <= -biasThr and activeTape
+bullConfSig = edgeOnly ? bullConfRaw and not bullConfRaw[1] : bullConfRaw
+bearConfSig = edgeOnly ? bearConfRaw and not bearConfRaw[1] : bearConfRaw
+
+// ── Plots ────────────────────────────────────────────────────
+colRetail     = color.white
+colInst       = color.rgb(201, 162, 39)   // gold
+colRetailSell = color.orange
+colInstSell   = color.red
+
+// Direction as a color channel: position encodes the scale-mode
+// quantity, color encodes each cohort's net flow lean (slow bias,
+// smoothed to prevent flicker at the zero boundary).
+retailSgnS = ta.ema(retailSgnRaw, smoothLen)
+instSgnS   = ta.ema(instSgnRaw, smoothLen)
+colR = dirTint and retailSgnS < 0 ? colRetailSell : colRetail
+colI = dirTint and instSgnS   < 0 ? colInstSell   : colInst
+
+pR = plot(retailShare, title="Retail share (white)", color=colR, linewidth=2)
+pI = plot(instShare,   title="Institutional share (gold)", color=colI, linewidth=2)
+fill(pR, pI, color=showFill ? (retailShare >= instShare ? color.new(colRetail, 86) : color.new(colInst, 78)) : na, title="Dominance fill")
+
+plot(useSigned ? 0.0 : 50.0,   title="Mid rail",   color=color.new(color.gray, 55),  display=display.pane)
+plot(useSigned ? 50.0 : 75.0,  title="Upper rail", color=color.new(color.gray, 85),  display=display.pane)
+plot(useSigned ? -50.0 : 25.0, title="Lower rail", color=color.new(color.gray, 85),  display=display.pane)
+plot(100.0,                    title="Top pin",    color=color.new(color.gray, 100), display=display.pane)
+plot(useSigned ? -100.0 : 0.0, title="Bottom pin", color=color.new(color.gray, 100), display=display.pane)
+
+yFlip = math.avg(retailShare, instShare)
+plotshape(showStars and flipToRetail and barstate.isconfirmed ? yFlip : na, title="Retail takes dominance",        style=shape.diamond, location=location.absolute, color=color.gray, size=size.tiny)
+plotshape(showStars and flipToInst   and barstate.isconfirmed ? yFlip : na, title="Institutional takes dominance", style=shape.diamond, location=location.absolute, color=color.gray, size=size.tiny)
+
+// Acc/Dist stars — plotted on the upper line, matching the
+// reference: cyan precedes institutional (gold) expansions,
+// magenta precedes retail (white) takeovers.
+yStar = math.max(retailShare, instShare)
+plotchar(showAccDist and accumSig and barstate.isconfirmed ? yStar : na, title="Institutional accumulation", char="✦", location=location.absolute, color=color.aqua,    size=size.small)
+plotchar(showAccDist and distSig  and barstate.isconfirmed ? yStar : na, title="Institutional distribution", char="✦", location=location.absolute, color=color.fuchsia, size=size.small)
+
+yConf = useSigned ? 0.0 : 50.0
+plotshape(showConf and bullConfSig and barstate.isconfirmed ? yConf : na, title="Bullish confluence", style=shape.circle, location=location.absolute, color=color.lime, size=size.tiny)
+plotshape(showConf and bearConfSig and barstate.isconfirmed ? yConf : na, title="Bearish confluence", style=shape.circle, location=location.absolute, color=color.red,  size=size.tiny)
+bgcolor(confBg and barstate.isconfirmed and bullConfRaw ? color.new(color.lime, 92) : confBg and barstate.isconfirmed and bearConfRaw ? color.new(color.red, 92) : na, title="Confluence tint")
+
+// ── Alerts (set to "Once per bar close") ─────────────────────
+alertcondition(flipToRetail, title="Retail dominance flip",        message="PartFlow-A: retail line crossed above institutional")
+alertcondition(flipToInst,   title="Institutional dominance flip", message="PartFlow-A: institutional line crossed above retail")
+alertcondition(accumSig,     title="Institutional accumulation",   message="PartFlow-A: quiet-tape dip, bullish institutional flow bias")
+alertcondition(distSig,      title="Institutional distribution",   message="PartFlow-A: quiet-tape rise, bearish institutional flow bias")
+alertcondition(bullConfSig,  title="Bullish confluence",           message="PartFlow-A: retail and institutional flow both bullish on an active tape")
+alertcondition(bearConfSig,  title="Bearish confluence",           message="PartFlow-A: retail and institutional flow both bearish on an active tape")
+
+// ── Debug / state export ─────────────────────────────────────
+plot(gateVal,                title="dbg · gateVal",       display=display.data_window)
+plot(instW,                  title="dbg · instW",         display=display.data_window)
+plot(retailW,                title="dbg · retailW",       display=display.data_window)
+plot(retailShareRaw,         title="dbg · rawShare",      display=display.data_window)
+plot(regime,                 title="dbg · regime",        display=display.data_window)
+plot(barsSinceFlip,          title="dbg · barsSinceFlip", display=display.data_window)
+plot(instBias,               title="dbg · instBias",      display=display.data_window)
+plot(retailBias,             title="dbg · retailBias",    display=display.data_window)
+plot(medVolPct,              title="dbg · medVolPct",     display=display.data_window)
+
+// ── State panel ──────────────────────────────────────────────
+// Live readout — values float intrabar and settle at close,
+// unlike markers/alerts which are confirmed-bar gated.
+var table panel = table.new(position.top_right, 2, 5, bgcolor=color.new(color.black, 30), border_width=1, border_color=color.new(color.gray, 70))
+
+if showPanel and barstate.islast
+    regTxt   = regime == 1 ? "Retail" : regime == -1 ? "Institutional" : "Neutral"
+    regCol   = regime == 1 ? colRetail : regime == -1 ? colInst : color.gray
+    instTxt  = instGrossL   == 0 ? "—" : (instSgnS   >= 0 ? "Buying " : "Selling ") + str.tostring(math.abs(nz(instSgnS)),   "#")
+    retTxt   = retailGrossL == 0 ? "—" : (retailSgnS >= 0 ? "Buying " : "Selling ") + str.tostring(math.abs(nz(retailSgnS)), "#")
+    instCol  = instGrossL   == 0 ? color.gray : instSgnS   >= 0 ? color.lime : colInstSell
+    retCol   = retailGrossL == 0 ? color.gray : retailSgnS >= 0 ? color.lime : colRetailSell
+    mvp      = nz(medVolPct)
+    tapeTxt  = (mvp <= lowVolPct ? "Quiet" : activeVolPct > 0 and mvp >= activeVolPct ? "Active" : "Normal") + " · P" + str.tostring(mvp, "#")
+    tapeCol  = mvp <= lowVolPct ? color.gray : activeVolPct > 0 and mvp >= activeVolPct ? color.yellow : color.silver
+    phaseTxt = accumRaw ? "Accumulating" : distRaw ? "Distributing" : bullConfRaw ? "Bull confluence" : bearConfRaw ? "Bear confluence" : "—"
+    phaseCol = accumRaw ? color.aqua : distRaw ? color.fuchsia : bullConfRaw ? color.lime : bearConfRaw ? color.red : color.gray
+    table.cell(panel, 0, 0, "Regime",      text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(panel, 1, 0, regTxt + " · " + str.tostring(barsSinceFlip) + "b", text_color=regCol, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(panel, 0, 1, "Inst flow",   text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(panel, 1, 1, instTxt,       text_color=instCol,    text_size=size.tiny, text_halign=text.align_right)
+    table.cell(panel, 0, 2, "Retail flow", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(panel, 1, 2, retTxt,        text_color=retCol,     text_size=size.tiny, text_halign=text.align_right)
+    table.cell(panel, 0, 3, "Tape",        text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(panel, 1, 3, tapeTxt,       text_color=tapeCol,    text_size=size.tiny, text_halign=text.align_right)
+    table.cell(panel, 0, 4, "Phase",       text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(panel, 1, 4, phaseTxt,      text_color=phaseCol,   text_size=size.tiny, text_halign=text.align_right)
