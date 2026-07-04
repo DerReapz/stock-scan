@@ -34,16 +34,26 @@ feeds go in a .env file next to where you run the command (see the project's
 
 
 def _owns_console() -> bool:
-    """True when this process is the console's only owner (double-click launch:
-    the window dies with the process)."""
+    """True when the console belongs to this app alone, i.e. the window dies
+    with the process (Explorer double-click).
+
+    A PyInstaller onefile build runs as TWO attached processes — the
+    bootloader (our parent) and this child — so "count == 1" never holds for
+    it. Instead: the console is ours alone iff every attached process is this
+    process or its parent. A launching shell (cmd/PowerShell) stays attached
+    to the console, fails that test, and keeps normal terminal behavior.
+    """
     if os.name != "nt":
         return False
     try:
         import ctypes
 
-        pids = (ctypes.c_uint * 2)()
-        count = ctypes.windll.kernel32.GetConsoleProcessList(pids, 2)
-        return count <= 1
+        pids = (ctypes.c_uint * 16)()
+        count = ctypes.windll.kernel32.GetConsoleProcessList(pids, 16)
+        if count == 0 or count > 16:
+            return False
+        ours = {os.getpid(), os.getppid()}
+        return all(pid in ours for pid in pids[:count])
     except Exception:  # noqa: BLE001 — heuristic only, never fatal
         return False
 
