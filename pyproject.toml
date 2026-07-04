@@ -26,6 +26,9 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.4",
 ]
+build = [
+    "pyinstaller>=6.6",
+]
 
 [project.scripts]
 stockscan = "stockscan.cli:app"
