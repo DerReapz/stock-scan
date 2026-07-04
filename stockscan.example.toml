@@ -1,0 +1,70 @@
+# stockscan configuration reference.
+# Copy to stockscan.toml (auto-loaded from the working directory) or pass --config PATH.
+# Precedence: CLI flags > environment variables (.env) > this file > built-in defaults.
+
+[scan]
+provider = "yfinance"        # yfinance | alpaca | polygon
+timeframe = "5m"             # 1m | 5m | 15m | 1h | 1D
+lookback = 300               # bars per symbol (floored to engine warmup needs)
+include_extended = true      # include pre/post-market bars
+filter = ""                  # e.g. "mb_state >= 1 and ggr_state >= 1"
+sort = "mb_score"            # any result column
+descending = true
+limit = 0                    # 0 = no limit
+
+[provider.alpaca]
+feed = "iex"                 # iex (free) | sip (paid subscription) — the live vs free switch
+
+[provider.polygon]
+tier = "free"                # free (15-min delayed, 5 req/min) | paid (no delay trim)
+
+# ── Built-in engine parameters (defaults mirror the Pine scripts) ──────────────
+
+[engines.iron_momentum]
+mode = "velocity"            # velocity | position
+mom_len = 10
+bench_len = 50
+sensitivity = 2.0
+smooth_len = 3
+deadband = 5.0
+strong_lvl = 30.0
+rvol_len = 20
+rvol_trigger = 2.0
+rvol_rth_only = true         # Pine input useETH=false => RTH-only RVOL
+stars_fresh_only = false
+
+[engines.silver_flow]
+gate_mode = "percentile"     # percentile | zscore
+gate_len = 100
+retail_thr = 50.0            # percentile (use 0.0 when gate_mode = zscore)
+inst_thr = 75.0              # percentile (use 1.0 when gate_mode = zscore)
+soft_gate = true
+weight_mode = "participation"  # participation | directional
+scale_mode = "share"         # share | independent | signed
+accum_len = 13
+smooth_len = 5
+double_smooth = false
+div_len = 8
+low_vol_pct = 40.0
+active_vol_pct = 60.0
+bias_thr = 0.25
+edge_only = true
+
+[engines.gold_regime]
+fast_len = 8
+slow_len = 20
+atr_len = 14
+rsi_len = 14
+band_len = 20
+band_mult = 1.0
+rsi_htf = ""                 # optional higher timeframe for the RSI leg, e.g. "1h"
+width_thresh = 0.5
+use_rsi_tier = true
+use_thrust_tier = true
+
+# ── User Pine scripts ──────────────────────────────────────────────────────────
+# Load extra .pine indicator files as engines. Input overrides per script:
+#
+# [pine."indicators/Iron_Momentum.pine"]
+# "Sensitivity" = 1.5
+# "RVOL trigger (x average)" = 2.5

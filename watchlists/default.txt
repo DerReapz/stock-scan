@@ -1,0 +1,12 @@
+# Default watchlist — one symbol per line, '#' starts a comment.
+AAPL
+MSFT
+NVDA
+AMZN
+GOOGL
+META
+TSLA
+AMD
+NFLX
+SPY
+QQQ

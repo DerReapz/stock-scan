@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stockscan</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --surface: #ffffff; --ink: #1a1d21; --ink-2: #5c6470;
+    --ink-3: #9aa1ab; --line: #e4e4e0; --accent: #2563eb;
+    --bull: #157f3d; --bear: #b42332; --warn-bg: #fdf3d7; --warn-ink: #7a5a10;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --surface: #1d2026; --ink: #e8eaed; --ink-2: #a8b0ba;
+      --ink-3: #6b7280; --line: #2c3038; --accent: #60a5fa;
+      --bull: #4ade80; --bear: #f87171; --warn-bg: #3a3012; --warn-ink: #e8c96a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.75rem;
+    padding: 1rem 1.25rem 0.5rem;
+  }
+  h1 { font-size: 1.05rem; margin: 0; letter-spacing: 0.02em; }
+  .meta { color: var(--ink-2); font-size: 0.85rem; }
+  .badge {
+    background: var(--warn-bg); color: var(--warn-ink);
+    padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem;
+  }
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;
+    padding: 0.25rem 1.25rem 0.75rem;
+  }
+  .controls input {
+    flex: 1 1 26rem; max-width: 40rem; padding: 0.45rem 0.7rem;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--surface); color: var(--ink); font: inherit;
+  }
+  .controls input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .hint { color: var(--ink-3); font-size: 0.78rem; }
+  #status { padding: 0 1.25rem 0.5rem; color: var(--ink-2); font-size: 0.82rem; min-height: 1.2em; }
+  #status.error { color: var(--bear); }
+  .tablewrap { overflow-x: auto; padding: 0 1.25rem 1.5rem; }
+  table {
+    border-collapse: collapse; width: 100%; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+    font-variant-numeric: tabular-nums;
+  }
+  th, td { padding: 0.42rem 0.65rem; text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    position: sticky; top: 0; background: var(--surface); color: var(--ink-2);
+    font-weight: 600; font-size: 0.78rem; cursor: pointer; user-select: none;
+    border-bottom: 1px solid var(--line);
+  }
+  thead th:hover { color: var(--accent); }
+  thead th .dir { color: var(--accent); }
+  tbody tr { border-top: 1px solid var(--line); }
+  tbody tr:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  td.sym { font-weight: 600; }
+  .pos { color: var(--bull); }
+  .neg { color: var(--bear); }
+  .zero { color: var(--ink-3); }
+  .errors { padding: 0 1.25rem 2rem; color: var(--ink-3); font-size: 0.8rem; }
+  .errors b { color: var(--ink-2); font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>stockscan</h1>
+  <span class="meta" id="meta-line">connecting…</span>
+  <span class="badge" id="delay-badge" hidden></span>
+</header>
+<div class="controls">
+  <input id="filter" type="text" spellcheck="false"
+         placeholder='filter, e.g. mb_state >= 1 and ggr_state >= 1'>
+  <span class="hint">column names = table headers · sort by clicking a header</span>
+</div>
+<div id="status"></div>
+<div class="tablewrap"><table id="grid"><thead></thead><tbody></tbody></table></div>
+<div class="errors" id="errors"></div>
+
+<script>
+"use strict";
+const POLL_MS = 5000;
+const state = { rows: [], meta: {}, errors: {}, sortCol: null, sortDir: -1, filter: "" };
+
+const SIGNED_RE = /(_state|_regime|_flip|_star|_confluence)$/;
+const isSigned = (col) => SIGNED_RE.test(col) && !col.includes("bars_since");
+const fmt = (col, v) => {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "boolean") return v ? "✓" : "·";
+  if (typeof v === "number") {
+    if (isSigned(col)) return (v > 0 ? "+" : "") + v;
+    if (Number.isInteger(v) && col.includes("bars_since")) return String(v);
+    return Math.abs(v) >= 1000 ? v.toLocaleString(undefined, {maximumFractionDigits: 2})
+                               : v.toFixed(2);
+  }
+  if (col === "last_bar") return String(v).replace("T", " ").slice(0, 16);
+  return String(v);
+};
+const cls = (col, v) => {
+  if (typeof v !== "number") return "";
+  if (isSigned(col) || col === "pct_chg")
+    return v > 0 ? "pos" : v < 0 ? "neg" : "zero";
+  return "";
+};
+
+function columnsOf(rows) {
+  if (!rows.length) return [];
+  const preferred = ["symbol","last_price","pct_chg","mb_score","mb_state","mb_rvol","mb_star",
+                     "ggr_state","ggr_width_atr","ggr_bars_since_flip","sf_regime","sf_inst",
+                     "sf_inst_bias","sf_accum","sf_dist","sf_confluence"];
+  const all = Object.keys(rows[0]);
+  const rest = all.filter(c => !preferred.includes(c) && c !== "last_bar");
+  return [...preferred.filter(c => all.includes(c)), ...rest, "last_bar"].filter(c => all.includes(c));
+}
+
+function render() {
+  const cols = columnsOf(state.rows);
+  const thead = document.querySelector("#grid thead");
+  const tbody = document.querySelector("#grid tbody");
+  thead.innerHTML = "<tr>" + cols.map(c =>
+    `<th data-col="${c}">${c}${state.sortCol === c ? ` <span class="dir">${state.sortDir > 0 ? "▲" : "▼"}</span>` : ""}</th>`
+  ).join("") + "</tr>";
+
+  let rows = [...state.rows];
+  if (state.sortCol) {
+    const c = state.sortCol, d = state.sortDir;
+    rows.sort((a, b) => {
+      const x = a[c], y = b[c];
+      if (x === null || x === undefined) return 1;
+      if (y === null || y === undefined) return -1;
+      return (x < y ? -1 : x > y ? 1 : 0) * d;
+    });
+  }
+  tbody.innerHTML = rows.map(r => "<tr>" + cols.map(c => {
+    const klass = c === "symbol" ? "sym" : cls(c, r[c]);
+    return `<td class="${klass}">${fmt(c, r[c])}</td>`;
+  }).join("") + "</tr>").join("");
+
+  const m = state.meta;
+  if (m.provider) {
+    document.getElementById("meta-line").textContent =
+      `${m.timeframe} · ${m.provider} · ${m.symbols_scanned}/${m.symbols_requested} symbols · updated ${new Date(m.as_of).toLocaleTimeString()}`;
+    const badge = document.getElementById("delay-badge");
+    badge.hidden = !m.is_delayed;
+    if (m.is_delayed) badge.textContent = `delayed ~${Math.round((m.delay_seconds || 0) / 60)} min`;
+  }
+  const errs = Object.entries(state.errors);
+  document.getElementById("errors").innerHTML = errs.length
+    ? "<b>skipped:</b> " + errs.map(([s, e]) => `${s} (${e})`).join(" · ") : "";
+}
+
+async function poll() {
+  const url = "/api/scan" + (state.filter ? `?filter=${encodeURIComponent(state.filter)}` : "");
+  const status = document.getElementById("status");
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok) { status.textContent = data.detail || "filter error"; status.className = "error"; return; }
+    state.rows = data.rows; state.meta = data.meta || {}; state.errors = data.errors || {};
+    status.textContent = data.status && data.status !== "ok" ? data.status : "";
+    status.className = data.status && data.status.startsWith("scan failed") ? "error" : "";
+    render();
+  } catch (err) {
+    status.textContent = "connection lost — retrying"; status.className = "error";
+  }
+}
+
+document.querySelector("#grid thead").addEventListener("click", (ev) => {
+  const th = ev.target.closest("th"); if (!th) return;
+  const col = th.dataset.col;
+  state.sortDir = state.sortCol === col ? -state.sortDir : -1;
+  state.sortCol = col;
+  render();
+});
+
+let debounce;
+document.getElementById("filter").addEventListener("input", (ev) => {
+  clearTimeout(debounce);
+  debounce = setTimeout(() => { state.filter = ev.target.value.trim(); poll(); }, 350);
+});
+
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>
