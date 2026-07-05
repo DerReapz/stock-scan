@@ -87,6 +87,54 @@ def load_watchlist(source: str) -> list[str]:
     raise FileNotFoundError(f"watchlist file not found: {source}")
 
 
+# Signal tiers over the 0-100 composite score (equal-weight blend of the
+# three engines, each normalized to 0-100).
+SIGNAL_TIERS = (
+    (80.0, "Strong Buy"),
+    (68.0, "Buy"),
+    (50.0, "Watch"),
+    (45.0, "Neutral"),
+)
+
+
+def _with_composite(df: pd.DataFrame) -> pd.DataFrame:
+    needed = ("mb_score", "ggr_state", "sf_inst_bias")
+    if not all(col in df.columns for col in needed):
+        return df
+    iron = (50.0 + pd.to_numeric(df["mb_score"], errors="coerce")).clip(0, 100)
+    gold = (pd.to_numeric(df["ggr_state"], errors="coerce") + 3.0) / 6.0 * 100.0
+    silver = ((pd.to_numeric(df["sf_inst_bias"], errors="coerce") + 1.0) / 2.0 * 100.0).clip(
+        0, 100
+    )
+    composite = ((iron + gold + silver) / 3.0).round(1)
+    df = df.copy()
+    df["composite"] = composite
+
+    def tier(score: float) -> str | None:
+        if pd.isna(score):
+            return None
+        for threshold, label in SIGNAL_TIERS:
+            if score >= threshold:
+                return label
+        return "Avoid"
+
+    df["signal"] = composite.map(tier)
+    return df
+
+
+def _day_change(bars: pd.DataFrame) -> float:
+    """Percent change of the last close vs the previous trading day's close
+    (falls back to bar-over-bar when there is no prior session in frame)."""
+    closes = bars["close"]
+    if len(closes) < 2:
+        return 0.0
+    dates = bars.index.tz_convert("America/New_York").date
+    last_date = dates[-1]
+    prior = closes[dates < last_date]
+    reference = prior.iloc[-1] if len(prior) else closes.iloc[-2]
+    return float((closes.iloc[-1] / reference - 1.0) * 100.0)
+
+
 def run_scan(
     req: ScanRequest, cfg: AppConfig, *, engines: list[Engine] | None = None
 ) -> ScanResult:
@@ -103,13 +151,16 @@ def run_scan(
         symbol, bars = item
         if len(bars) < warmup:
             return symbol, None, f"only {len(bars)} bars, need >= {warmup} for warmup"
+        closes = bars["close"]
+        sma50 = closes.iloc[-50:].mean() if len(closes) >= 50 else closes.mean()
         row: dict[str, Any] = {
-            "last_price": float(bars["close"].iloc[-1]),
-            "pct_chg": float(
-                (bars["close"].iloc[-1] / bars["close"].iloc[-2] - 1.0) * 100.0
-            )
+            "last_price": float(closes.iloc[-1]),
+            "pct_chg": float((closes.iloc[-1] / closes.iloc[-2] - 1.0) * 100.0)
             if len(bars) > 1
             else 0.0,
+            "day_chg": _day_change(bars),
+            "above_sma50": bool(closes.iloc[-1] > sma50),
+            "new_high": bool(closes.iloc[-1] >= closes.max()),
             "last_bar": bars.index[-1],
         }
         try:
@@ -130,6 +181,7 @@ def run_scan(
     df = pd.DataFrame.from_dict(rows, orient="index")
     df.index.name = "symbol"
     if len(df):
+        df = _with_composite(df)
         if req.filter_expr:
             df = apply_filter(df, req.filter_expr)
         sort_col = req.sort_by if req.sort_by in df.columns else None

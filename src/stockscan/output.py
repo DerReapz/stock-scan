@@ -14,21 +14,24 @@ from .scan import ScanResult
 # Columns shown in the terminal table (full set goes to JSON/CSV).
 DEFAULT_COLUMNS = [
     "last_price",
-    "pct_chg",
+    "day_chg",
+    "composite",
+    "signal",
     "mb_score",
     "mb_state",
     "mb_rvol",
     "mb_star",
     "ggr_state",
-    "ggr_width_atr",
     "ggr_bars_since_flip",
     "sf_regime",
-    "sf_inst",
     "sf_inst_bias",
     "sf_accum",
     "sf_dist",
     "sf_confluence",
 ]
+
+# Context columns kept out of the terminal view (still in JSON/CSV/filters).
+HIDDEN_COLUMNS = {"last_bar", "pct_chg", "above_sma50", "new_high", "ggr_width_atr", "sf_inst"}
 
 _STATE_STYLES = {2: "bold green", 1: "green", 0: "dim", -1: "red", -2: "bold red",
                  3: "bold green", -3: "bold red"}
@@ -51,7 +54,11 @@ def render_table(result: ScanResult, console: Console | None = None) -> None:
 
     df = result.rows
     columns = [c for c in DEFAULT_COLUMNS if c in df.columns]
-    extra = [c for c in df.columns if c not in columns and c != "last_bar" and not _is_builtin(c)]
+    extra = [
+        c
+        for c in df.columns
+        if c not in columns and c not in HIDDEN_COLUMNS and not _is_builtin(c)
+    ]
     columns += extra
     for col in columns:
         table.add_column(col, justify="right")
@@ -84,10 +91,14 @@ def _format_cell(col: str, value) -> str:
         sign = "+" if iv > 0 else ""
         return f"[{style}]{sign}{iv}[/{style}]"
     if isinstance(value, float):
-        if col == "pct_chg":
+        if col in ("pct_chg", "day_chg"):
             style = "green" if value >= 0 else "red"
             return f"[{style}]{value:+.2f}%[/{style}]"
         return f"{value:,.2f}"
+    if col == "signal":
+        style = {"Strong Buy": "bold green", "Buy": "green", "Watch": "yellow",
+                 "Neutral": "dim", "Avoid": "red"}.get(str(value), "white")
+        return f"[{style}]{value}[/{style}]"
     return str(value)
 
 

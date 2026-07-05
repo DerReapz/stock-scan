@@ -190,6 +190,7 @@ def compute_series(bars: pd.DataFrame, cfg: SilverFlowConfig) -> pd.DataFrame:
             "bars_since_flip": bars_since_flip,
             "inst_bias": inst_bias,
             "retail_bias": retail_bias,
+            "inst_net_usd": inst_net_l,  # signed institutional $ flow, accum window
             "inst_flow": inst_flow,
             "retail_flow": retail_flow,
             "tape_pct": med_vol_pct,

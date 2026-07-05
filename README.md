@@ -85,6 +85,28 @@ Filters accept comparison operators plus `and` / `or` / `not`, and only column
 names — no arbitrary code. The dashboard has the same filter box, applied
 server-side against the cached scan (no extra API calls).
 
+Every row also gets a 0–100 **composite score** (equal-weight blend of the
+three engines, each normalized to 0–100) and a **signal tier** — Strong Buy
+≥ 80, Buy ≥ 68, Watch ≥ 50, Neutral ≥ 45, Avoid below — exported as the
+`composite` / `signal` columns, filterable like everything else.
+
+## The ORE Signal Terminal dashboard
+
+`stockscan serve` opens a four-view terminal-style dashboard:
+
+- **Overview** — index tape, hero cards for the three engines (universe
+  regime, median momentum, net institutional dollar flow), today's top
+  signals ranked by composite score, market breadth (advancers/decliners,
+  new highs, % above 50-bar MA), and your starred watchlist.
+- **Scanner** — indicator toggles, minimum-composite slider, per-engine
+  Bull/Neutral/Bear filters, ticker search, an advanced filter-expression
+  box, sortable results, star-to-watchlist, and "Save as scan".
+- **Saved Library** — saved scans (name + filter, live match counts, run
+  with one click) and starred tickers, persisted to
+  `stockscan_library.json` next to where you run `serve`.
+- **Settings** — active feed (delayed vs real-time), provider key status,
+  and the running scan configuration.
+
 ## Bring your own PineScript
 
 ```bash
