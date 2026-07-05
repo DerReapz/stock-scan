@@ -3,192 +3,755 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>stockscan</title>
+<title>ORE Signal Terminal — stockscan</title>
 <style>
-  :root {
-    --bg: #f7f7f5; --surface: #ffffff; --ink: #1a1d21; --ink-2: #5c6470;
-    --ink-3: #9aa1ab; --line: #e4e4e0; --accent: #2563eb;
-    --bull: #157f3d; --bear: #b42332; --warn-bg: #fdf3d7; --warn-ink: #7a5a10;
+  :root{
+    --bg:#0A0D12; --panel:#0C1017; --card:#10151D; --card2:#161C26;
+    --line:rgba(255,255,255,.06); --line2:rgba(255,255,255,.1);
+    --ink:#E9EDF3; --ink2:#C7D0DC; --ink3:#9FB2C4; --ink4:#8B95A7;
+    --muted:#59636F; --muted2:#4A535E;
+    --gold:#E8B33D; --iron:#E8834D; --silver:#6FD0E6;
+    --green:#35D08A; --red:#FF5C6C;
+    --sans:'Space Grotesk',system-ui,-apple-system,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #14161a; --surface: #1d2026; --ink: #e8eaed; --ink-2: #a8b0ba;
-      --ink-3: #6b7280; --line: #2c3038; --accent: #60a5fa;
-      --bull: #4ade80; --bear: #f87171; --warn-bg: #3a3012; --warn-ink: #e8c96a;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-  header {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.75rem;
-    padding: 1rem 1.25rem 0.5rem;
-  }
-  h1 { font-size: 1.05rem; margin: 0; letter-spacing: 0.02em; }
-  .meta { color: var(--ink-2); font-size: 0.85rem; }
-  .badge {
-    background: var(--warn-bg); color: var(--warn-ink);
-    padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem;
-  }
-  .controls {
-    display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;
-    padding: 0.25rem 1.25rem 0.75rem;
-  }
-  .controls input {
-    flex: 1 1 26rem; max-width: 40rem; padding: 0.45rem 0.7rem;
-    border: 1px solid var(--line); border-radius: 6px;
-    background: var(--surface); color: var(--ink); font: inherit;
-  }
-  .controls input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-  .hint { color: var(--ink-3); font-size: 0.78rem; }
-  #status { padding: 0 1.25rem 0.5rem; color: var(--ink-2); font-size: 0.82rem; min-height: 1.2em; }
-  #status.error { color: var(--bear); }
-  .tablewrap { overflow-x: auto; padding: 0 1.25rem 1.5rem; }
-  table {
-    border-collapse: collapse; width: 100%; background: var(--surface);
-    border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
-    font-variant-numeric: tabular-nums;
-  }
-  th, td { padding: 0.42rem 0.65rem; text-align: right; white-space: nowrap; }
-  th:first-child, td:first-child { text-align: left; }
-  thead th {
-    position: sticky; top: 0; background: var(--surface); color: var(--ink-2);
-    font-weight: 600; font-size: 0.78rem; cursor: pointer; user-select: none;
-    border-bottom: 1px solid var(--line);
-  }
-  thead th:hover { color: var(--accent); }
-  thead th .dir { color: var(--accent); }
-  tbody tr { border-top: 1px solid var(--line); }
-  tbody tr:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
-  td.sym { font-weight: 600; }
-  .pos { color: var(--bull); }
-  .neg { color: var(--bear); }
-  .zero { color: var(--ink-3); }
-  .errors { padding: 0 1.25rem 2rem; color: var(--ink-3); font-size: 0.8rem; }
-  .errors b { color: var(--ink-2); font-weight: 600; }
+  *{box-sizing:border-box;margin:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;display:flex;overflow:hidden}
+  button{font-family:inherit;color:inherit;background:none;border:none;cursor:pointer}
+  input{font-family:inherit;color:inherit}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#232a35;border-radius:6px}
+  ::-webkit-scrollbar-track{background:transparent}
+
+  /* ── sidebar ─────────────────────────────────────────── */
+  aside{width:234px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:18px 14px;gap:4px}
+  .logo{display:flex;align-items:center;gap:10px;padding:0 8px 18px}
+  .logo-mark{width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,#2b3444 0%,#141a24 55%);position:relative;overflow:hidden;flex-shrink:0}
+  .logo-mark::after{content:"";position:absolute;inset:8px 7px 7px 8px;background:linear-gradient(135deg,var(--gold),#8a6a24);clip-path:polygon(50% 0,100% 38%,78% 100%,22% 100%,0 38%)}
+  .logo b{font-size:16px;letter-spacing:.28em}
+  .logo span{display:block;font-size:8.5px;letter-spacing:.3em;color:var(--muted);font-family:var(--mono)}
+  nav{display:flex;flex-direction:column;gap:3px}
+  nav a{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:8px;color:var(--ink4);text-decoration:none;font-size:13.5px;position:relative}
+  nav a svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.7;flex-shrink:0}
+  nav a.active{background:var(--card2);color:var(--ink)}
+  nav a.active::before{content:"";position:absolute;left:-14px;top:7px;bottom:7px;width:3px;background:var(--gold);border-radius:0 3px 3px 0}
+  nav a:hover{color:var(--ink2)}
+  .side-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.24em;color:var(--muted);padding:20px 10px 8px}
+  .ind-row{display:flex;align-items:center;gap:9px;padding:5px 10px;color:var(--ink4);font-size:12.5px}
+  .dot{width:8px;height:8px;border-radius:2.5px;flex-shrink:0}
+  .side-spacer{flex:1}
+  .delayed-box{border:1px solid rgba(232,179,61,.45);background:rgba(232,179,61,.07);border-radius:9px;padding:9px 12px;margin:0 2px 12px;display:none}
+  .delayed-box.show{display:block}
+  .delayed-box b{color:var(--gold);font-size:12px;letter-spacing:.06em;display:flex;align-items:center;gap:7px}
+  .delayed-box b::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--gold)}
+  .delayed-box span{font-size:10.5px;color:var(--muted);font-family:var(--mono)}
+  .profile{display:flex;align-items:center;gap:10px;padding:4px 8px}
+  .avatar{width:30px;height:30px;border-radius:50%;background:var(--gold);color:#1a1405;font-weight:700;font-size:12px;display:grid;place-items:center}
+  .profile b{font-size:12.5px;display:block}
+  .profile span{font-size:10.5px;color:var(--muted);font-family:var(--mono)}
+
+  /* ── main / header / tape ────────────────────────────── */
+  main{flex:1;display:flex;flex-direction:column;min-width:0}
+  header{display:flex;align-items:center;justify-content:space-between;padding:15px 26px 11px;gap:16px}
+  header h1{font-size:19px;font-weight:600}
+  header .sub{font-size:12px;color:var(--muted);margin-top:2px;max-width:420px}
+  .head-right{display:flex;align-items:center;gap:16px;font-family:var(--mono);font-size:12px;flex-shrink:0}
+  .mkt{display:flex;align-items:center;gap:7px;color:var(--ink4);letter-spacing:.08em}
+  .mkt .dot{width:7px;height:7px;border-radius:50%}
+  #clock{color:var(--ink);font-size:14px;letter-spacing:.06em}
+  .pill{border:1px solid rgba(232,179,61,.5);background:rgba(232,179,61,.1);color:var(--gold);border-radius:999px;padding:4px 13px;font-size:11px;letter-spacing:.1em;display:none;align-items:center;gap:7px}
+  .pill::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--gold)}
+  .pill.show{display:flex}
+  .tape{display:flex;gap:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:#0B0F16;overflow-x:auto;font-family:var(--mono);font-size:12px;white-space:nowrap}
+  .tape>div{padding:8px 18px;display:flex;gap:9px;align-items:center;border-right:1px solid var(--line)}
+  .tape .lbl{color:var(--muted);letter-spacing:.08em}
+  .tape .val{color:var(--ink2)}
+  .content{flex:1;overflow-y:auto;padding:22px 26px 40px}
+  .view{display:none;max-width:1060px}
+  .view.active{display:block}
+  .up{color:var(--green)} .down{color:var(--red)} .flat{color:var(--muted)}
+
+  /* ── cards & shared ──────────────────────────────────── */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;position:relative;overflow:hidden}
+  .card-top{height:3px;position:absolute;top:0;left:0;right:0;border-radius:12px 12px 0 0}
+  .card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .card-head h3{font-family:var(--mono);font-size:11px;letter-spacing:.22em;color:var(--ink4);font-weight:500}
+  .chip{width:9px;height:9px;border-radius:2.5px}
+  .hero-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:18px}
+  .hero-value{font-size:31px;font-weight:700;letter-spacing:.01em;line-height:1.1;font-family:var(--mono)}
+  .hero-sub{font-size:12px;color:var(--ink4);margin:7px 0 15px;min-height:2.4em}
+  .meter{height:7px;border-radius:4px;display:flex;gap:3px}
+  .meter i{flex:1;border-radius:4px;background:#2a3038}
+  .meter-labels{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--muted);margin-top:6px}
+  .bar-track{height:7px;border-radius:4px;background:#2a3038;overflow:hidden}
+  .bar-fill{height:100%;border-radius:4px}
+  .mini-bars{display:flex;align-items:flex-end;justify-content:flex-end;gap:6px;height:34px}
+  .mini-bars i{flex:1;max-width:34px;border-radius:3px 3px 0 0;background:#3a434e;min-height:5px}
+  .mini-bars i.pos{background:var(--silver)}
+  .mini-bars i.neg{background:#546069}
+  .two-col{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start}
+  .panel-title{font-size:15px;font-weight:600}
+  .link{color:var(--gold);font-size:12px;text-decoration:none;cursor:pointer}
+  .link:hover{text-decoration:underline}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--muted);text-align:right;padding:9px 10px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap}
+  th:first-child{text-align:left}
+  th .dir{color:var(--gold)}
+  td{padding:10px;text-align:right;border-bottom:1px solid var(--line);font-family:var(--mono);white-space:nowrap}
+  td:first-child{text-align:left}
+  tr:hover td{background:rgba(255,255,255,.02)}
+  .tk b{font-family:var(--sans);font-size:13.5px;letter-spacing:.04em;display:block}
+  .tk span{font-size:10.5px;color:var(--muted)}
+  .star{color:var(--muted2);font-size:15px;padding:0 7px 0 0;cursor:pointer}
+  .star.on{color:var(--gold)}
+  .badge{display:inline-block;font-family:var(--sans);font-size:11.5px;font-weight:600;padding:4px 12px;border-radius:7px}
+  .b-strongbuy{background:rgba(53,208,138,.16);color:var(--green)}
+  .b-buy{background:rgba(53,208,138,.1);color:#4FD69B}
+  .b-watch{background:rgba(232,179,61,.13);color:var(--gold)}
+  .b-neutral{background:rgba(139,149,167,.12);color:var(--ink4)}
+  .b-avoid{background:rgba(255,92,108,.13);color:var(--red)}
+  .regime-dot{display:inline-flex;align-items:center;gap:7px}
+  .empty{color:var(--muted);font-size:12.5px;font-family:var(--mono);padding:18px 4px}
+
+  /* top signals */
+  .sig-row{display:grid;grid-template-columns:30px 1fr 170px 60px 110px;align-items:center;gap:10px;padding:11px 4px;border-bottom:1px solid var(--line)}
+  .sig-row:last-child{border-bottom:none}
+  .sig-rank{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .sig-chgbar{height:7px;border-radius:4px;background:#2a3038;overflow:hidden}
+  .sig-chgbar i{display:block;height:100%;background:var(--iron);border-radius:4px}
+  .sig-score{font-family:var(--mono);font-size:17px;font-weight:600;text-align:right}
+  .sig-badge{text-align:right}
+
+  /* scanner */
+  .scanner-grid{display:grid;grid-template-columns:268px 1fr;gap:16px;align-items:start}
+  .rail{display:flex;flex-direction:column;gap:18px}
+  .rail .card{padding:15px 16px}
+  .search{display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:10px 13px}
+  .search input{background:none;border:none;outline:none;width:100%;font-size:13px;color:var(--ink)}
+  .search input::placeholder{color:var(--muted)}
+  .rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.24em;color:var(--muted);margin-bottom:10px}
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;background:var(--card2);border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:8px;cursor:pointer}
+  .toggle-row .name{display:flex;align-items:center;gap:9px;font-size:13px}
+  .toggle-state{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--green)}
+  .toggle-row.off{opacity:.55}
+  .toggle-row.off .toggle-state{color:var(--muted)}
+  .slider-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .slider-head b{font-family:var(--mono);color:var(--gold);font-size:14px}
+  input[type=range]{width:100%;accent-color:var(--gold);background:transparent}
+  .seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .seg button{background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:9px 0;font-size:12.5px;color:var(--ink4)}
+  .seg button.on{border-color:rgba(232,179,61,.6);background:rgba(232,179,61,.1);color:var(--gold)}
+  .adv input{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-family:var(--mono);font-size:11.5px;outline:none}
+  .adv input:focus{border-color:rgba(232,179,61,.5)}
+  .adv .err{color:var(--red);font-family:var(--mono);font-size:10.5px;margin-top:6px;min-height:1em}
+  .match-head{display:flex;justify-content:space-between;align-items:baseline;padding:2px 4px 12px}
+  .match-head b{font-size:15px}
+  .match-head b em{font-style:normal;font-family:var(--mono);color:var(--gold)}
+  .match-head span{font-size:11px;color:var(--muted);font-family:var(--mono)}
+  .save-btn{border:1px solid rgba(232,179,61,.5);color:var(--gold);border-radius:8px;padding:7px 14px;font-size:12px}
+  .save-btn:hover{background:rgba(232,179,61,.08)}
+
+  /* library */
+  .lib-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:26px}
+  .lib-card h4{font-size:15px;margin-bottom:9px;display:flex;justify-content:space-between;align-items:start}
+  .lib-card .count{font-family:var(--mono);font-size:11px;background:var(--card2);border:1px solid var(--line);padding:2px 9px;border-radius:6px;color:var(--gold)}
+  .lib-card .crit{font-family:var(--mono);font-size:11px;color:var(--ink4);line-height:1.7;min-height:3em;word-break:break-all}
+  .lib-card footer{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);margin-top:13px;padding-top:11px;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+  .lib-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+  .del{color:var(--muted);font-size:11px}
+  .del:hover{color:var(--red)}
+
+  /* settings */
+  .set-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:26px}
+  .set-card{border-radius:12px;padding:20px;border:1px solid var(--line);background:var(--card);position:relative}
+  .set-card.active-plan{border-color:rgba(232,179,61,.55)}
+  .set-card .tag{position:absolute;top:16px;right:16px;font-family:var(--mono);font-size:10px;letter-spacing:.12em;padding:3px 11px;border-radius:999px}
+  .tag-active{background:rgba(232,179,61,.16);color:var(--gold)}
+  .tag-off{background:var(--card2);color:var(--muted);border:1px solid var(--line)}
+  .set-card h4{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--ink4);font-weight:500}
+  .set-card .big{font-size:26px;font-weight:700;margin:9px 0 8px}
+  .set-card p{font-size:12.5px;color:var(--ink4);line-height:1.55;margin-bottom:13px}
+  .checks{display:flex;flex-direction:column;gap:7px;font-size:12.5px;color:var(--ink3)}
+  .checks .ok::before{content:"✓ ";color:var(--green)}
+  .checks .no::before{content:"— ";color:var(--muted)}
+  .prov-row{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:14px 18px;margin-bottom:10px}
+  .prov-ico{width:38px;height:38px;border-radius:9px;display:grid;place-items:center;font-weight:700;font-size:13px;flex-shrink:0}
+  .prov-row b{display:block;font-size:14px}
+  .prov-row span{font-size:11.5px;color:var(--muted);font-family:var(--mono)}
+  .prov-state{margin-left:auto;font-family:var(--mono);font-size:11px;padding:6px 14px;border-radius:8px;border:1px solid var(--line);color:var(--ink4)}
+  .prov-state.on{color:var(--green);border-color:rgba(53,208,138,.4)}
 </style>
 </head>
-<body>
-<header>
-  <h1>stockscan</h1>
-  <span class="meta" id="meta-line">connecting…</span>
-  <span class="badge" id="delay-badge" hidden></span>
-</header>
-<div class="controls">
-  <input id="filter" type="text" spellcheck="false"
-         placeholder='filter, e.g. mb_state >= 1 and ggr_state >= 1'>
-  <span class="hint">column names = table headers · sort by clicking a header</span>
-</div>
-<div id="status"></div>
-<div class="tablewrap"><table id="grid"><thead></thead><tbody></tbody></table></div>
-<div class="errors" id="errors"></div>
+<body data-palette="#E8B33D,#E8834D,#6FD0E6,#35D08A,#FF5C6C">
+
+<aside>
+  <div class="logo"><div class="logo-mark"></div><div><b>ORE</b><span>SIGNAL TERMINAL</span></div></div>
+  <nav id="nav">
+    <a href="#/overview" data-v="overview"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Overview</a>
+    <a href="#/scanner" data-v="scanner"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>Scanner</a>
+    <a href="#/library" data-v="library"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Saved Library</a>
+    <a href="#/settings" data-v="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Settings</a>
+  </nav>
+  <div class="side-label">INDICATORS</div>
+  <div class="ind-row"><i class="dot" style="background:var(--silver)"></i>Silver Flow</div>
+  <div class="ind-row"><i class="dot" style="background:var(--iron)"></i>Iron Momentum</div>
+  <div class="ind-row"><i class="dot" style="background:var(--gold)"></i>Gold Regime</div>
+  <div class="side-spacer"></div>
+  <div class="delayed-box" id="delayed-box"><b>DELAYED</b><span id="delayed-note">15-min delayed</span></div>
+  <div class="profile"><div class="avatar" id="prov-avatar">yf</div><div><b id="prov-name">yfinance</b><span id="prov-plan">free feed</span></div></div>
+</aside>
+
+<main>
+  <header>
+    <div><h1 id="view-title">Market Overview</h1><div class="sub" id="view-sub"></div></div>
+    <div class="head-right">
+      <span class="mkt"><i class="dot" id="mkt-dot" style="background:var(--muted)"></i><span id="mkt-state">NYSE</span></span>
+      <span id="clock">--:--:-- ET</span>
+      <span class="pill" id="delay-pill">DELAYED</span>
+    </div>
+  </header>
+  <div class="tape" id="tape"></div>
+  <div class="content">
+
+    <!-- ═══ OVERVIEW ═══ -->
+    <section class="view" id="v-overview">
+      <div class="hero-grid">
+        <div class="card"><div class="card-top" style="background:var(--gold)"></div>
+          <div class="card-head"><h3>GOLD REGIME</h3><i class="chip" style="background:var(--gold)"></i></div>
+          <div class="hero-value" id="gold-regime" style="color:var(--gold)">—</div>
+          <div class="hero-sub" id="gold-sub">warming up…</div>
+          <div class="meter" id="gold-meter"><i></i><i></i><i></i></div>
+          <div class="meter-labels"><span>BEAR</span><span>NEUTRAL</span><span>BULL</span></div>
+        </div>
+        <div class="card"><div class="card-top" style="background:var(--iron)"></div>
+          <div class="card-head"><h3>IRON MOMENTUM</h3><i class="chip" style="background:var(--iron)"></i></div>
+          <div class="hero-value" id="iron-score">—</div>
+          <div class="hero-sub" id="iron-sub">warming up…</div>
+          <div class="bar-track"><div class="bar-fill" id="iron-bar" style="background:linear-gradient(90deg,var(--iron),#f0a06a);width:0%"></div></div>
+        </div>
+        <div class="card"><div class="card-top" style="background:var(--silver)"></div>
+          <div class="card-head"><h3>SILVER FLOW</h3><i class="chip" style="background:var(--silver)"></i></div>
+          <div class="hero-value" id="silver-net" style="color:var(--silver)">—</div>
+          <div class="hero-sub" id="silver-sub">warming up…</div>
+          <div class="mini-bars" id="silver-bars"></div>
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head" style="margin-bottom:4px"><span class="panel-title">Today's Top Signals</span>
+            <a class="link" href="#/scanner">Open scanner →</a></div>
+          <div id="top-signals"><div class="empty">warming up…</div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <div class="card">
+            <div class="panel-title" style="margin-bottom:14px">Market Breadth</div>
+            <div class="bar-track" style="display:flex;gap:2px;background:none">
+              <div id="adv-bar" style="height:7px;border-radius:4px;background:var(--green);width:50%"></div>
+              <div id="dec-bar" style="height:7px;border-radius:4px;background:var(--red);width:50%"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;margin-top:9px">
+              <span class="up" id="adv-n">— adv</span><span class="down" id="dec-n">— dec</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px">
+              <div><div style="font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;color:var(--muted)">NEW HIGHS</div>
+                <div style="font-family:var(--mono);font-size:22px;font-weight:600;color:var(--green)" id="new-highs">—</div></div>
+              <div><div style="font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;color:var(--muted)">% &gt; 50D MA</div>
+                <div style="font-family:var(--mono);font-size:22px;font-weight:600" id="above-ma">—</div></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head" style="margin-bottom:8px"><span class="panel-title">Your Watchlist</span>
+              <a class="link" id="wl-all" href="#/library">All (0)</a></div>
+            <div id="watchlist-mini"><div class="empty">Star tickers in the scanner ★</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ SCANNER ═══ -->
+    <section class="view" id="v-scanner">
+      <div class="scanner-grid">
+        <div class="rail">
+          <div class="search"><svg width="14" height="14" viewBox="0 0 24 24" stroke="#59636F" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input id="f-search" placeholder="Search ticker" autocomplete="off"></div>
+          <div class="card">
+            <div class="rail-label">ACTIVE INDICATORS</div>
+            <div class="toggle-row" data-ind="silver"><span class="name"><i class="dot" style="background:var(--silver)"></i>Silver Flow</span><span class="toggle-state">ON</span></div>
+            <div class="toggle-row" data-ind="iron"><span class="name"><i class="dot" style="background:var(--iron)"></i>Iron Momentum</span><span class="toggle-state">ON</span></div>
+            <div class="toggle-row" data-ind="gold" style="margin-bottom:0"><span class="name"><i class="dot" style="background:var(--gold)"></i>Gold Regime</span><span class="toggle-state">ON</span></div>
+          </div>
+          <div class="card">
+            <div class="slider-head"><span class="rail-label" style="margin:0">MIN COMPOSITE SCORE</span><b id="f-score-val">0</b></div>
+            <input type="range" id="f-score" min="0" max="100" value="0">
+          </div>
+          <div class="card">
+            <div class="rail-label">GOLD REGIME</div>
+            <div class="seg" data-seg="gold">
+              <button data-val="any" class="on">Any</button><button data-val="bull">Bull</button>
+              <button data-val="neutral">Neutral</button><button data-val="bear">Bear</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="rail-label">IRON MOMENTUM</div>
+            <div class="seg" data-seg="iron">
+              <button data-val="any" class="on">Any</button><button data-val="bull">Bullish</button>
+              <button data-val="bear" style="grid-column:1/-1">Bearish</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="rail-label">SILVER FLOW</div>
+            <div class="seg" data-seg="silver">
+              <button data-val="any" class="on">Any</button><button data-val="in">Inflow</button>
+              <button data-val="out" style="grid-column:1/-1">Outflow</button>
+            </div>
+          </div>
+          <div class="card adv">
+            <div class="rail-label">ADVANCED FILTER</div>
+            <input id="f-adv" placeholder='mb_rvol >= 2 and sf_accum' spellcheck="false">
+            <div class="err" id="f-adv-err"></div>
+          </div>
+        </div>
+        <div class="card" style="padding:14px 18px">
+          <div class="match-head"><b><em id="match-n">0</em> tickers match</b>
+            <span id="sort-note">sorted by composite score</span>
+            <button class="save-btn" id="save-scan">Save as scan</button></div>
+          <div style="overflow-x:auto"><table id="scan-table"><thead></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ LIBRARY ═══ -->
+    <section class="view" id="v-library">
+      <div class="lib-head"><span class="rail-label" style="margin:0;padding:0">SAVED SCANS</span></div>
+      <div class="lib-grid" id="saved-scans"><div class="empty">No saved scans yet — build a filter in the scanner and hit “Save as scan”.</div></div>
+      <div class="lib-head"><span class="rail-label" style="margin:0;padding:0" id="saved-tickers-label">SAVED TICKERS</span>
+        <a class="link" href="#/scanner">+ Add from scanner</a></div>
+      <div class="card" style="padding:8px 18px 14px">
+        <table id="lib-table"><thead>
+          <tr><th>TICKER</th><th>LAST</th><th>CHG%</th><th>IRON MOM.</th><th>GOLD REGIME</th><th>SILVER</th><th>COMP</th><th>SIGNAL</th></tr>
+        </thead><tbody></tbody></table>
+        <div class="empty" id="lib-empty" style="display:none">Nothing starred yet.</div>
+      </div>
+    </section>
+
+    <!-- ═══ SETTINGS ═══ -->
+    <section class="view" id="v-settings">
+      <div class="rail-label" style="padding:0;margin-bottom:12px">DATA CONNECTION</div>
+      <div class="set-grid" id="data-cards"></div>
+      <div class="rail-label" style="padding:0;margin-bottom:12px">DATA PROVIDERS</div>
+      <div id="prov-list"></div>
+      <div class="rail-label" style="padding:0;margin:22px 0 12px">SCAN CONFIGURATION</div>
+      <div class="card"><div id="scan-config" style="font-family:var(--mono);font-size:12.5px;color:var(--ink3);line-height:2"></div></div>
+    </section>
+
+  </div>
+</main>
 
 <script>
 "use strict";
-const POLL_MS = 5000;
-const state = { rows: [], meta: {}, errors: {}, sortCol: null, sortDir: -1, filter: "" };
-
-const SIGNED_RE = /(_state|_regime|_flip|_star|_confluence)$/;
-const isSigned = (col) => SIGNED_RE.test(col) && !col.includes("bars_since");
-const fmt = (col, v) => {
-  if (v === null || v === undefined) return "—";
-  if (typeof v === "boolean") return v ? "✓" : "·";
-  if (typeof v === "number") {
-    if (isSigned(col)) return (v > 0 ? "+" : "") + v;
-    if (Number.isInteger(v) && col.includes("bars_since")) return String(v);
-    return Math.abs(v) >= 1000 ? v.toLocaleString(undefined, {maximumFractionDigits: 2})
-                               : v.toFixed(2);
-  }
-  if (col === "last_bar") return String(v).replace("T", " ").slice(0, 16);
-  return String(v);
+/* ── state ─────────────────────────────────────────────── */
+const S = {
+  rows: [], meta: {}, errors: {}, starred: [],
+  overview: null, tape: [], library: {saved_scans: [], starred: []}, settings: null,
+  sortCol: "composite", sortDir: -1,
+  f: {search: "", score: 0, gold: "any", iron: "any", silver: "any", adv: "",
+      ind: {silver: true, iron: true, gold: true}},
+  advOk: true,
 };
-const cls = (col, v) => {
-  if (typeof v !== "number") return "";
-  if (isSigned(col) || col === "pct_chg")
-    return v > 0 ? "pos" : v < 0 ? "neg" : "zero";
-  return "";
+const $ = (id) => document.getElementById(id);
+const fmt$ = (v) => v == null ? "—" : "$" + v.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const fmtPct = (v) => v == null ? "—" : (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
+const pctCls = (v) => v == null ? "flat" : v > 0 ? "up" : v < 0 ? "down" : "flat";
+const fmtMoney = (v) => {
+  if (v == null) return "—";
+  const a = Math.abs(v), sign = v < 0 ? "-" : "+";
+  if (a >= 1e9) return sign + "$" + (a / 1e9).toFixed(1) + "B";
+  if (a >= 1e6) return sign + "$" + (a / 1e6).toFixed(0) + "M";
+  return sign + "$" + (a / 1e3).toFixed(0) + "K";
 };
+const ironScore = (mb) => mb == null ? null : Math.round(Math.max(0, Math.min(100, 50 + mb)));
+const badge = (sig) => {
+  if (!sig) return "";
+  const cls = {"Strong Buy": "b-strongbuy", "Buy": "b-buy", "Watch": "b-watch",
+               "Neutral": "b-neutral", "Avoid": "b-avoid"}[sig] || "b-neutral";
+  return `<span class="badge ${cls}">${sig}</span>`;
+};
+const goldLabel = (st) => st == null ? ["—", "var(--muted)"]
+  : st > 0 ? ["Bull", "var(--gold)"] : st < 0 ? ["Bear", "var(--red)"] : ["Neutral", "var(--ink4)"];
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
-function columnsOf(rows) {
-  if (!rows.length) return [];
-  const preferred = ["symbol","last_price","pct_chg","mb_score","mb_state","mb_rvol","mb_star",
-                     "ggr_state","ggr_width_atr","ggr_bars_since_flip","sf_regime","sf_inst",
-                     "sf_inst_bias","sf_accum","sf_dist","sf_confluence"];
-  const all = Object.keys(rows[0]);
-  const rest = all.filter(c => !preferred.includes(c) && c !== "last_bar");
-  return [...preferred.filter(c => all.includes(c)), ...rest, "last_bar"].filter(c => all.includes(c));
+/* ── routing ───────────────────────────────────────────── */
+const VIEWS = {
+  overview: ["Market Overview", "Live regime, momentum and flow across the tape"],
+  scanner:  ["Signal Scanner", "Filter the universe by Silver, Iron and Gold criteria"],
+  library:  ["Saved Library", "Your saved scans and starred tickers"],
+  settings: ["Settings", "Data connection, feed and scan configuration"],
+};
+function route() {
+  const v = (location.hash.replace("#/", "") || "overview");
+  const view = VIEWS[v] ? v : "overview";
+  document.querySelectorAll(".view").forEach(el => el.classList.toggle("active", el.id === "v-" + view));
+  document.querySelectorAll("#nav a").forEach(a => a.classList.toggle("active", a.dataset.v === view));
+  $("view-title").textContent = VIEWS[view][0];
+  $("view-sub").textContent = VIEWS[view][1];
+  if (view === "library") refreshLibrary();
+  if (view === "settings") refreshSettings();
 }
+window.addEventListener("hashchange", route);
 
-function render() {
-  const cols = columnsOf(state.rows);
-  const thead = document.querySelector("#grid thead");
-  const tbody = document.querySelector("#grid tbody");
-  thead.innerHTML = "<tr>" + cols.map(c =>
-    `<th data-col="${c}">${c}${state.sortCol === c ? ` <span class="dir">${state.sortDir > 0 ? "▲" : "▼"}</span>` : ""}</th>`
-  ).join("") + "</tr>";
-
-  let rows = [...state.rows];
-  if (state.sortCol) {
-    const c = state.sortCol, d = state.sortDir;
-    rows.sort((a, b) => {
-      const x = a[c], y = b[c];
-      if (x === null || x === undefined) return 1;
-      if (y === null || y === undefined) return -1;
-      return (x < y ? -1 : x > y ? 1 : 0) * d;
-    });
-  }
-  tbody.innerHTML = rows.map(r => "<tr>" + cols.map(c => {
-    const klass = c === "symbol" ? "sym" : cls(c, r[c]);
-    return `<td class="${klass}">${fmt(c, r[c])}</td>`;
-  }).join("") + "</tr>").join("");
-
-  const m = state.meta;
-  if (m.provider) {
-    document.getElementById("meta-line").textContent =
-      `${m.timeframe} · ${m.provider} · ${m.symbols_scanned}/${m.symbols_requested} symbols · updated ${new Date(m.as_of).toLocaleTimeString()}`;
-    const badge = document.getElementById("delay-badge");
-    badge.hidden = !m.is_delayed;
-    if (m.is_delayed) badge.textContent = `delayed ~${Math.round((m.delay_seconds || 0) / 60)} min`;
-  }
-  const errs = Object.entries(state.errors);
-  document.getElementById("errors").innerHTML = errs.length
-    ? "<b>skipped:</b> " + errs.map(([s, e]) => `${s} (${e})`).join(" · ") : "";
+/* ── clock / market state ──────────────────────────────── */
+function tickClock() {
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York",
+    hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit", weekday: "short"});
+  const parts = Object.fromEntries(fmt.formatToParts(now).map(p => [p.type, p.value]));
+  $("clock").textContent = `${parts.hour}:${parts.minute}:${parts.second} ET`;
+  const mins = (+parts.hour) * 60 + (+parts.minute);
+  const weekday = !["Sat", "Sun"].includes(parts.weekday);
+  const open = weekday && mins >= 570 && mins < 960;
+  $("mkt-state").textContent = open ? "NYSE OPEN" : "NYSE CLOSED";
+  $("mkt-dot").style.background = open ? "var(--green)" : "var(--muted2)";
 }
+setInterval(tickClock, 1000); tickClock();
+
+/* ── data fetch ────────────────────────────────────────── */
+async function jget(url) { const r = await fetch(url); if (!r.ok) throw await r.json(); return r.json(); }
 
 async function poll() {
-  const url = "/api/scan" + (state.filter ? `?filter=${encodeURIComponent(state.filter)}` : "");
-  const status = document.getElementById("status");
   try {
-    const res = await fetch(url);
-    const data = await res.json();
-    if (!res.ok) { status.textContent = data.detail || "filter error"; status.className = "error"; return; }
-    state.rows = data.rows; state.meta = data.meta || {}; state.errors = data.errors || {};
-    status.textContent = data.status && data.status !== "ok" ? data.status : "";
-    status.className = data.status && data.status.startsWith("scan failed") ? "error" : "";
-    render();
-  } catch (err) {
-    status.textContent = "connection lost — retrying"; status.className = "error";
+    const adv = S.advOk && S.f.adv ? `?filter=${encodeURIComponent(S.f.adv)}` : "";
+    const data = await jget("/api/scan" + adv);
+    S.rows = data.rows; S.meta = data.meta || {}; S.errors = data.errors || {};
+    S.starred = data.starred || [];
+    $("f-adv-err").textContent = "";
+  } catch (e) {
+    if (e && e.detail) { $("f-adv-err").textContent = e.detail; S.advOk = false; }
   }
+  try { S.overview = await jget("/api/overview"); } catch (e) {}
+  try { S.tape = (await jget("/api/tape")).tape; } catch (e) {}
+  renderMeta(); renderTape(); renderOverview(); renderScanner(); renderWatchlistMini();
 }
 
-document.querySelector("#grid thead").addEventListener("click", (ev) => {
-  const th = ev.target.closest("th"); if (!th) return;
-  const col = th.dataset.col;
-  state.sortDir = state.sortCol === col ? -state.sortDir : -1;
-  state.sortCol = col;
-  render();
+/* ── meta / tape ───────────────────────────────────────── */
+function renderMeta() {
+  const m = S.meta;
+  const delayed = !!m.is_delayed;
+  $("delay-pill").classList.toggle("show", delayed);
+  $("delayed-box").classList.toggle("show", delayed);
+  if (m.delay_seconds) $("delayed-note").textContent = `${Math.round(m.delay_seconds / 60)}-min delayed`;
+  if (m.provider) {
+    $("prov-name").textContent = m.provider;
+    $("prov-avatar").textContent = m.provider.slice(0, 2).toUpperCase();
+    $("prov-plan").textContent = delayed ? "delayed feed" : "live feed";
+  }
+}
+function renderTape() {
+  $("tape").innerHTML = S.tape.map(t =>
+    `<div><span class="lbl">${esc(t.label)}</span><span class="val">${t.last.toLocaleString(undefined,{maximumFractionDigits:2})}</span><span class="${pctCls(t.chg_pct)}">${fmtPct(t.chg_pct)}</span></div>`
+  ).join("") || `<div><span class="lbl">tape warming up…</span></div>`;
+}
+
+/* ── overview ──────────────────────────────────────────── */
+function renderOverview() {
+  const o = S.overview;
+  if (!o || !o.gold) return;
+  const g = o.gold;
+  $("gold-regime").textContent = g.regime || "—";
+  $("gold-regime").style.color = g.regime === "RISK-ON" ? "var(--gold)" : g.regime === "RISK-OFF" ? "var(--red)" : "var(--ink4)";
+  $("gold-sub").textContent = g.pct_bull == null ? "" : `${g.pct_bull.toFixed(0)}% of universe in bull regime`;
+  const seg = g.pct_bull == null ? -1 : g.pct_bull >= 55 ? 2 : (g.pct_bear >= 55 ? 0 : 1);
+  [...$("gold-meter").children].forEach((el, i) =>
+    el.style.background = i === seg ? (i === 2 ? "var(--gold)" : i === 0 ? "var(--red)" : "var(--ink4)") : "#2a3038");
+
+  const it = o.iron;
+  const score = it.score == null ? null : Math.round(it.score);
+  const delta = it.prev_score != null && it.score != null ? it.score - it.prev_score : null;
+  $("iron-score").innerHTML = score == null ? "—" :
+    `${score} <span style="font-size:14px;color:${delta == null || delta >= 0 ? "var(--green)" : "var(--red)"}">${delta == null ? "" : (delta >= 0 ? "▲ Rising" : "▼ Falling")}</span>`;
+  $("iron-sub").textContent = it.pct_positive == null ? "" : `${it.pct_positive.toFixed(0)}% of names with positive momentum`;
+  $("iron-bar").style.width = (score ?? 0) + "%";
+
+  const sv = o.silver;
+  $("silver-net").textContent = fmtMoney(sv.net_usd);
+  $("silver-net").style.color = sv.net_usd != null && sv.net_usd < 0 ? "var(--red)" : "var(--silver)";
+  $("silver-sub").textContent = sv.pct_inflow == null ? "" : `net institutional flow · ${sv.pct_inflow.toFixed(0)}% of names in inflow`;
+  const hist = (sv.history || []).slice(-6);
+  const maxAbs = Math.max(1, ...hist.map(v => Math.abs(v || 0)));
+  $("silver-bars").innerHTML = hist.map(v =>
+    `<i class="${(v || 0) >= 0 ? "pos" : "neg"}" style="height:${Math.max(12, Math.abs(v || 0) / maxAbs * 100)}%"></i>`).join("")
+    || `<i></i><i></i><i></i>`;
+
+  const b = o.breadth || {};
+  const tot = (b.advancers || 0) + (b.decliners || 0) || 1;
+  $("adv-bar").style.width = ((b.advancers || 0) / tot * 100) + "%";
+  $("dec-bar").style.width = ((b.decliners || 0) / tot * 100) + "%";
+  $("adv-n").textContent = `${b.advancers ?? "—"} adv`;
+  $("dec-n").textContent = `${b.decliners ?? "—"} dec`;
+  $("new-highs").textContent = b.new_highs ?? "—";
+  $("above-ma").textContent = b.above_sma50_pct == null ? "—" : b.above_sma50_pct.toFixed(0) + "%";
+
+  const maxChg = Math.max(0.5, ...(o.top_signals || []).map(s => Math.abs(s.day_chg || 0)));
+  $("top-signals").innerHTML = (o.top_signals || []).map((s, i) => `
+    <div class="sig-row">
+      <span class="sig-rank">${String(i + 1).padStart(2, "0")}</span>
+      <span class="tk"><b>${esc(s.symbol)} <span class="${pctCls(s.day_chg)}" style="font-size:11.5px">${fmtPct(s.day_chg)}</span></b></span>
+      <span class="sig-chgbar"><i style="width:${Math.abs(s.day_chg || 0) / maxChg * 100}%"></i></span>
+      <span class="sig-score" style="color:var(--gold)">${s.composite == null ? "—" : Math.round(s.composite)}</span>
+      <span class="sig-badge">${badge(s.signal)}</span>
+    </div>`).join("") || `<div class="empty">warming up…</div>`;
+}
+
+function renderWatchlistMini() {
+  const starredRows = S.rows.filter(r => S.starred.includes(r.symbol));
+  $("wl-all").textContent = `All (${S.starred.length})`;
+  $("watchlist-mini").innerHTML = starredRows.slice(0, 5).map(r => `
+    <div class="sig-row" style="grid-template-columns:1fr 80px 70px">
+      <span class="tk"><b>${esc(r.symbol)}</b></span>
+      <span style="font-family:var(--mono);text-align:right">${fmt$(r.last_price)}</span>
+      <span class="${pctCls(r.day_chg)}" style="font-family:var(--mono);text-align:right">${fmtPct(r.day_chg)}</span>
+    </div>`).join("") || `<div class="empty">Star tickers in the scanner ★</div>`;
+}
+
+/* ── scanner ───────────────────────────────────────────── */
+function filteredRows() {
+  const f = S.f;
+  return S.rows.filter(r => {
+    if (f.search && !r.symbol.toUpperCase().includes(f.search.toUpperCase())) return false;
+    if (f.score > 0 && !(r.composite >= f.score)) return false;
+    if (f.gold !== "any") {
+      const st = r.ggr_state;
+      if (f.gold === "bull" && !(st > 0)) return false;
+      if (f.gold === "bear" && !(st < 0)) return false;
+      if (f.gold === "neutral" && st !== 0) return false;
+    }
+    if (f.iron !== "any") {
+      if (f.iron === "bull" && !(r.mb_state > 0)) return false;
+      if (f.iron === "bear" && !(r.mb_state < 0)) return false;
+    }
+    if (f.silver !== "any") {
+      if (f.silver === "in" && !(r.sf_inst_bias > 0)) return false;
+      if (f.silver === "out" && !(r.sf_inst_bias < 0)) return false;
+    }
+    return true;
+  });
+}
+
+function scannerColumns() {
+  const cols = [["symbol", "TICKER"], ["last_price", "LAST"], ["day_chg", "CHG%"]];
+  if (S.f.ind.silver) cols.push(["sf_inst_bias", "SILVER"]);
+  if (S.f.ind.iron) cols.push(["mb_score", "IRON"]);
+  if (S.f.ind.gold) cols.push(["ggr_state", "GOLD"]);
+  cols.push(["composite", "COMP"], ["signal", "SIGNAL"]);
+  return cols;
+}
+
+function renderScanner() {
+  const rows = filteredRows();
+  const c = S.sortCol, d = S.sortDir;
+  rows.sort((a, b) => {
+    const x = a[c], y = b[c];
+    if (x == null) return 1; if (y == null) return -1;
+    return (x < y ? -1 : x > y ? 1 : 0) * d;
+  });
+  $("match-n").textContent = rows.length;
+  $("sort-note").textContent = "sorted by " + (c === "composite" ? "composite score" : c);
+  const cols = scannerColumns();
+  document.querySelector("#scan-table thead").innerHTML = "<tr>" + cols.map(([key, label]) =>
+    `<th data-col="${key}">${label}${S.sortCol === key ? ` <span class="dir">${d > 0 ? "▲" : "▼"}</span>` : ""}</th>`).join("") + "</tr>";
+  document.querySelector("#scan-table tbody").innerHTML = rows.map(r => {
+    const [gl, gc] = goldLabel(r.ggr_state);
+    const cells = cols.map(([key]) => {
+      if (key === "symbol") {
+        const on = S.starred.includes(r.symbol);
+        return `<td><span class="star ${on ? "on" : ""}" data-star="${esc(r.symbol)}">${on ? "★" : "☆"}</span><span class="tk" style="display:inline-block;vertical-align:middle"><b>${esc(r.symbol)}</b><span>MB ${r.mb_state > 0 ? "+" : ""}${r.mb_state ?? "·"} · GGR ${r.ggr_state > 0 ? "+" : ""}${r.ggr_state ?? "·"}</span></span></td>`;
+      }
+      if (key === "last_price") return `<td>${fmt$(r.last_price)}</td>`;
+      if (key === "day_chg") return `<td class="${pctCls(r.day_chg)}">${fmtPct(r.day_chg)}</td>`;
+      if (key === "sf_inst_bias") return `<td class="${pctCls(r.sf_inst_bias)}">${r.sf_inst_bias == null ? "—" : (r.sf_inst_bias > 0 ? "+" : "") + r.sf_inst_bias.toFixed(2)}</td>`;
+      if (key === "mb_score") return `<td>${ironScore(r.mb_score) ?? "—"}</td>`;
+      if (key === "ggr_state") return `<td><span class="regime-dot"><i class="dot" style="background:${gc}"></i>${gl}</span></td>`;
+      if (key === "composite") return `<td style="color:var(--gold);font-weight:600">${r.composite == null ? "—" : Math.round(r.composite)}</td>`;
+      if (key === "signal") return `<td>${badge(r.signal)}</td>`;
+      return "<td>—</td>";
+    });
+    return "<tr>" + cells.join("") + "</tr>";
+  }).join("");
+}
+
+/* scanner interactions */
+document.querySelector("#scan-table").addEventListener("click", async (ev) => {
+  const star = ev.target.closest("[data-star]");
+  if (star) {
+    const res = await jget2post(`/api/library/star/${star.dataset.star}`);
+    if (res) { S.starred = res.starred ? [...S.starred, res.symbol] : S.starred.filter(s => s !== res.symbol); }
+    renderScanner(); renderWatchlistMini();
+    return;
+  }
+  const th = ev.target.closest("th");
+  if (th && th.dataset.col) {
+    S.sortDir = S.sortCol === th.dataset.col ? -S.sortDir : -1;
+    S.sortCol = th.dataset.col;
+    renderScanner();
+  }
+});
+async function jget2post(url, body) {
+  try {
+    const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
+      body: body ? JSON.stringify(body) : undefined});
+    if (!r.ok) return null;
+    return r.json();
+  } catch (e) { return null; }
+}
+$("f-search").addEventListener("input", e => { S.f.search = e.target.value.trim(); renderScanner(); });
+$("f-score").addEventListener("input", e => { S.f.score = +e.target.value; $("f-score-val").textContent = e.target.value; renderScanner(); });
+document.querySelectorAll(".seg").forEach(seg => seg.addEventListener("click", ev => {
+  const btn = ev.target.closest("button"); if (!btn) return;
+  seg.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === btn));
+  S.f[seg.dataset.seg] = btn.dataset.val;
+  renderScanner();
+}));
+document.querySelectorAll(".toggle-row").forEach(row => row.addEventListener("click", () => {
+  const key = row.dataset.ind;
+  S.f.ind[key] = !S.f.ind[key];
+  row.classList.toggle("off", !S.f.ind[key]);
+  row.querySelector(".toggle-state").textContent = S.f.ind[key] ? "ON" : "OFF";
+  renderScanner();
+}));
+let advT;
+$("f-adv").addEventListener("input", e => {
+  clearTimeout(advT);
+  advT = setTimeout(() => { S.f.adv = e.target.value.trim(); S.advOk = true; poll(); }, 400);
+});
+$("save-scan").addEventListener("click", async () => {
+  const name = prompt("Name this scan:", "");
+  if (!name) return;
+  const parts = [];
+  if (S.f.score > 0) parts.push(`composite >= ${S.f.score}`);
+  if (S.f.gold === "bull") parts.push("ggr_state > 0");
+  if (S.f.gold === "bear") parts.push("ggr_state < 0");
+  if (S.f.gold === "neutral") parts.push("ggr_state == 0");
+  if (S.f.iron === "bull") parts.push("mb_state > 0");
+  if (S.f.iron === "bear") parts.push("mb_state < 0");
+  if (S.f.silver === "in") parts.push("sf_inst_bias > 0");
+  if (S.f.silver === "out") parts.push("sf_inst_bias < 0");
+  if (S.f.adv) parts.push(`(${S.f.adv})`);
+  await jget2post("/api/library/scans", {name, filter: parts.join(" and "), sort: S.sortCol});
+  location.hash = "#/library";
 });
 
-let debounce;
-document.getElementById("filter").addEventListener("input", (ev) => {
-  clearTimeout(debounce);
-  debounce = setTimeout(() => { state.filter = ev.target.value.trim(); poll(); }, 350);
+/* ── library ───────────────────────────────────────────── */
+async function refreshLibrary() {
+  let lib;
+  try { lib = await jget("/api/library"); } catch (e) { return; }
+  S.library = lib;
+  const scans = lib.saved_scans || [];
+  $("saved-scans").innerHTML = scans.map(s => `
+    <div class="card lib-card">
+      <h4>${esc(s.name)}<span class="count" data-count-for="${esc(s.name)}">…</span></h4>
+      <div class="crit">${esc(s.filter || "no filter — full universe")}</div>
+      <footer><span>Updated ${s.updated ? new Date(s.updated).toLocaleDateString() : "—"} ·
+        <button class="del" data-del="${esc(s.name)}">delete</button></span>
+        <a class="link" href="#/scanner" data-run="${esc(s.filter || "")}">Run scan →</a></footer>
+    </div>`).join("") || `<div class="empty">No saved scans yet — build a filter in the scanner and hit “Save as scan”.</div>`;
+  for (const s of scans) {
+    try {
+      const res = await jget(`/api/scan?filter=${encodeURIComponent(s.filter || "")}`);
+      const el = document.querySelector(`[data-count-for="${CSS.escape(s.name)}"]`);
+      if (el) el.textContent = res.rows.length;
+    } catch (e) {}
+  }
+  const rows = lib.starred_rows || [];
+  $("saved-tickers-label").textContent = `SAVED TICKERS · ${rows.length}`;
+  $("lib-empty").style.display = rows.length ? "none" : "block";
+  document.querySelector("#lib-table tbody").innerHTML = rows.map(r => {
+    const [gl, gc] = goldLabel(r.ggr_state);
+    return `<tr>
+      <td><span class="star on" data-unstar="${esc(r.symbol)}">★</span><b style="font-family:var(--sans)">${esc(r.symbol)}</b></td>
+      <td>${fmt$(r.last_price)}</td>
+      <td class="${pctCls(r.day_chg)}">${fmtPct(r.day_chg)}</td>
+      <td>${ironScore(r.mb_score) ?? "—"}</td>
+      <td><span class="regime-dot"><i class="dot" style="background:${gc}"></i>${gl}</span></td>
+      <td>${r.sf_regime == null ? "—" : r.sf_regime < 0 ? "Institutional" : r.sf_regime > 0 ? "Retail" : "Even"}</td>
+      <td style="color:var(--gold);font-weight:600">${r.composite == null ? "—" : Math.round(r.composite)}</td>
+      <td>${badge(r.signal)}</td>
+    </tr>`;
+  }).join("");
+}
+$("v-library").addEventListener("click", async (ev) => {
+  const del = ev.target.closest("[data-del]");
+  if (del) {
+    await fetch(`/api/library/scans/${encodeURIComponent(del.dataset.del)}`, {method: "DELETE"});
+    refreshLibrary();
+    return;
+  }
+  const unstar = ev.target.closest("[data-unstar]");
+  if (unstar) {
+    await jget2post(`/api/library/star/${unstar.dataset.unstar}`);
+    await poll(); refreshLibrary();
+    return;
+  }
+  const run = ev.target.closest("[data-run]");
+  if (run) {
+    $("f-adv").value = run.dataset.run;
+    S.f.adv = run.dataset.run; S.advOk = true;
+    poll();
+  }
 });
 
+/* ── settings ──────────────────────────────────────────── */
+async function refreshSettings() {
+  let st;
+  try { st = await jget("/api/settings"); } catch (e) { return; }
+  S.settings = st;
+  const delayed = !!st.is_delayed;
+  const delayTxt = st.delay_seconds ? `${Math.round(st.delay_seconds / 60)}-minute delayed quotes` : "delayed quotes";
+  const rtReady = st.alpaca.configured || st.polygon.configured;
+  $("data-cards").innerHTML = `
+    <div class="set-card ${delayed ? "active-plan" : ""}">
+      <span class="tag ${delayed ? "tag-active" : "tag-off"}">${delayed ? "ACTIVE" : "STANDBY"}</span>
+      <h4>DELAYED DATA</h4><div class="big" style="color:var(--gold)">Free</div>
+      <p>${delayTxt} across all indicators. Signals recompute on completed bars only — nothing repaints.</p>
+      <div class="checks">
+        <span class="ok">All three ORE indicators + your Pine scripts</span>
+        <span class="ok">Unlimited saved scans</span>
+        <span class="no">${st.note || "quote delay applies"}</span>
+      </div>
+    </div>
+    <div class="set-card ${!delayed ? "active-plan" : ""}">
+      <span class="tag ${!delayed ? "tag-active" : "tag-off"}">${!delayed ? "ACTIVE" : rtReady ? "READY" : "NEEDS KEYS"}</span>
+      <h4>REAL-TIME DATA</h4><div class="big">Live feed</div>
+      <p>Run the scanner on a real-time provider: restart with <span style="font-family:var(--mono)">--provider alpaca</span> (IEX free / SIP paid) or <span style="font-family:var(--mono)">--provider polygon</span> (paid tier).</p>
+      <div class="checks">
+        <span class="${st.alpaca.configured ? "ok" : "no"}">Alpaca keys ${st.alpaca.configured ? `configured · feed=${st.alpaca.feed}` : "missing (ALPACA_KEY_ID / ALPACA_SECRET in .env)"}</span>
+        <span class="${st.polygon.configured ? "ok" : "no"}">Polygon key ${st.polygon.configured ? `configured · tier=${st.polygon.tier}` : "missing (POLYGON_API_KEY in .env)"}</span>
+        <span class="ok">Same engines, filters and saved scans</span>
+      </div>
+    </div>`;
+  const provs = [
+    ["yfinance", "YF", "#5B4FCF", "Yahoo Finance — delayed, no key required", true],
+    ["alpaca", "AL", "#C7A008", `Alpaca — feed=${st.alpaca.feed} (IEX free / SIP paid)`, st.alpaca.configured],
+    ["polygon", "PG", "#4557CF", `Polygon.io — tier=${st.polygon.tier} (free = 15-min delay)`, st.polygon.configured],
+  ];
+  $("prov-list").innerHTML = provs.map(([name, ico, color, desc, ok]) => `
+    <div class="prov-row">
+      <div class="prov-ico" style="background:${color}22;color:${color};border:1px solid ${color}55">${ico}</div>
+      <div><b>${name}${st.provider === name ? ' <span style="color:var(--gold);font-size:11px">· in use</span>' : ""}</b><span>${desc}</span></div>
+      <span class="prov-state ${ok ? "on" : ""}">${ok ? "configured" : "not configured"}</span>
+    </div>`).join("");
+  $("scan-config").innerHTML =
+    `timeframe&nbsp;&nbsp;&nbsp;= ${esc(st.timeframe)}<br>` +
+    `rescan&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= every ${st.interval}s<br>` +
+    `universe&nbsp;&nbsp;&nbsp;= ${st.universe} symbols<br>` +
+    `default sort = ${esc(st.default_sort || "composite")}<br>` +
+    `default filter = ${esc(st.default_filter || "(none)")}`;
+}
+
+/* ── boot ──────────────────────────────────────────────── */
+route();
 poll();
-setInterval(poll, POLL_MS);
+setInterval(poll, 5000);
 </script>
 </body>
 </html>

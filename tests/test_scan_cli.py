@@ -111,10 +111,11 @@ class TestCli:
             ["scan", "UP,DOWN", "--timeframe", "5m", "--json", str(json_out)],
         )
         assert result.exit_code == 0, result.output
-        assert "UP" in result.output
         payload = json.loads(json_out.read_text())
         assert {r["symbol"] for r in payload["rows"]} == {"UP", "DOWN"}
         assert payload["meta"]["is_delayed"] is True
+        row = payload["rows"][0]
+        assert "composite" in row and "signal" in row and "day_chg" in row
 
     def test_scan_filter_rejects_bad_column(self):
         from stockscan.cli import app
