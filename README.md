@@ -159,12 +159,13 @@ executable embeds the dashboard front end, so `stockscan serve` works from
 the single file; `.env`, `stockscan.toml`, watchlists, and `--pine` scripts
 are read from the directory you run it in, exactly like the pip install.
 
-**Windows note:** `stockscan.exe` is a command-line tool — open PowerShell or
-cmd in the folder containing it and run `stockscan scan ...` / `stockscan
-serve ...`. Double-clicking it in Explorer shows a quickstart and keeps the
-window open (it used to flash and close), but real use happens from a
-terminal or a shortcut with arguments, e.g.
-`stockscan.exe serve watchlist.txt`.
+**Windows note:** double-clicking `stockscan.exe` launches the dashboard
+directly — it picks up a `watchlist.txt` (or `watchlists/default.txt`) next
+to the exe if present (built-in large-cap default otherwise), starts the
+server on the first free port from 8501, and opens your browser. The console
+window that appears *is* the scanner; close it to stop. For everything else
+(scans, filters, `--pine`, other timeframes/providers), run it from
+PowerShell or cmd: `stockscan.exe scan ...` / `stockscan.exe serve ...`.
 
 CI does this automatically: the `build` workflow
 (`.github/workflows/build.yml`) runs tests on every push/PR, and on version
