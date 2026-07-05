@@ -3,33 +3,39 @@
 Kept outside the package so the frozen app imports ``stockscan`` the same way
 a pip install does.
 
-Windows double-click handling: launching a console executable from Explorer
-spawns a console owned solely by this process, which Windows destroys the
-instant the process exits — help text or a traceback flashes for a moment and
-vanishes. When we detect that case, show a quickstart if no command was given
-and hold the window open until Enter is pressed, including after crashes so
-errors stay readable.
+Double-click behavior: launching the exe from Explorer used to print a
+quickstart that *mentioned* the dashboard URL — but no server was running, so
+the address went nowhere. Now a double-click (or STOCKSCAN_AUTOLAUNCH=1)
+launches the dashboard directly: pick a watchlist (watchlist.txt or
+watchlists/default.txt next to the exe or in the working directory, else a
+built-in default), bind the first free port from 8501, open the browser, and
+run ``serve``. The console window stays open — it IS the server — and any
+crash holds the window so the error stays readable.
 """
 
 import multiprocessing
 import os
 import sys
 import traceback
+from pathlib import Path
 
-QUICKSTART = """\
-stockscan is a command-line tool — open PowerShell or cmd in this folder and
-run a command, e.g.:
+DEFAULT_SYMBOLS = "AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,AMD,NFLX,SPY,QQQ"
 
-  stockscan scan AAPL,MSFT,NVDA --timeframe 15m
-  stockscan scan watchlist.txt --filter "mb_state >= 2 and ggr_state >= 1"
-  stockscan serve watchlist.txt          (dashboard on http://127.0.0.1:8501)
-  stockscan scan AAPL --pine my_indicator.pine
-  stockscan providers                    (data feeds + API-key status)
-  stockscan --help                       (all options)
+BANNER = """\
+──────────────────────────────────────────────────────────────────
+  ORE Signal Terminal — starting the dashboard
 
-A watchlist is a text file with one symbol per line. API keys for the live
-feeds go in a .env file next to where you run the command (see the project's
-.env.example).
+  watchlist : {watchlist}
+  dashboard : {url}   (opening in your browser…)
+
+  Keep this window open — it is the scanner. Close it (or press
+  Ctrl+C) to stop.
+
+  Tip: put a watchlist.txt (one symbol per line) next to the exe
+  to scan your own list, or run from a terminal for full control:
+      stockscan serve watchlist.txt --timeframe 15m
+      stockscan --help
+──────────────────────────────────────────────────────────────────
 """
 
 
@@ -58,13 +64,57 @@ def _owns_console() -> bool:
         return False
 
 
+def _find_watchlist() -> str:
+    exe_dir = Path(sys.executable).parent
+    for base in (Path.cwd(), exe_dir):
+        for candidate in (base / "watchlist.txt", base / "watchlists" / "default.txt"):
+            if candidate.is_file():
+                return str(candidate)
+    return DEFAULT_SYMBOLS
+
+
+def _free_port(start: int = 8501) -> int:
+    import socket
+
+    for port in range(start, start + 25):
+        with socket.socket() as sock:
+            try:
+                sock.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                continue
+    return start
+
+
+def _autolaunch_dashboard() -> None:
+    """Rewrite argv into a `serve` invocation and open the browser once the
+    server has had a moment to bind."""
+    import threading
+    import webbrowser
+
+    watchlist = _find_watchlist()
+    port = _free_port()
+    url = f"http://127.0.0.1:{port}"
+    shown = watchlist if watchlist != DEFAULT_SYMBOLS else "built-in default (large caps + SPY/QQQ)"
+    print(BANNER.format(watchlist=shown, url=url), flush=True)
+
+    def open_browser() -> None:
+        try:
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001 — the URL is printed either way
+            pass
+
+    threading.Timer(3.0, open_browser).start()
+    sys.argv = [sys.argv[0], "serve", watchlist, "--port", str(port)]
+
+
 def main() -> int:
     multiprocessing.freeze_support()
     hold_window = _owns_console()
+    force_launch = os.environ.get("STOCKSCAN_AUTOLAUNCH") == "1"
 
-    if hold_window and len(sys.argv) == 1:
-        print(QUICKSTART)
-        return 0
+    if len(sys.argv) == 1 and (hold_window or force_launch):
+        _autolaunch_dashboard()
 
     from stockscan.cli import app
 
