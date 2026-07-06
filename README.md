@@ -94,6 +94,15 @@ three engines, each normalized to 0–100) and a **signal tier** — Strong Buy
 
 `stockscan serve` opens a four-view terminal-style dashboard:
 
+- **Scan market button + data provenance** — a header **Scan market** button
+  forces an immediate market pull + recompute on demand (rather than waiting
+  for the auto-refresh interval). A status bar under the header shows when
+  data was last pulled, from which provider, and how many symbols returned
+  data (e.g. `47/50 symbols from yfinance · 1.2s`). If the free feed returns
+  nothing — Yahoo rate-limits `yfinance` aggressively — a banner says so
+  explicitly (it's a real fetch that came back empty, **not** placeholder
+  data) and points you to a keyed real-time feed. This is the honest signal
+  of whether you're looking at genuine market data.
 - **Overview** — index tape, hero cards for the three engines (universe
   regime, median momentum, net institutional dollar flow), today's top
   signals ranked by composite score, market breadth (advancers/decliners,
