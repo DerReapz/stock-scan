@@ -60,6 +60,21 @@
   .mkt{display:flex;align-items:center;gap:7px;color:var(--ink4);letter-spacing:.08em}
   .mkt .dot{width:7px;height:7px;border-radius:50%}
   #clock{color:var(--ink);font-size:14px;letter-spacing:.06em}
+  .scan-btn{display:flex;align-items:center;gap:8px;border:1px solid rgba(232,179,61,.55);background:rgba(232,179,61,.12);color:var(--gold);border-radius:8px;padding:7px 15px;font-size:12.5px;font-weight:600;letter-spacing:.02em}
+  .scan-btn:hover{background:rgba(232,179,61,.2)}
+  .scan-btn:disabled{opacity:.7;cursor:default}
+  .scan-btn.scanning #scan-ico{animation:spin 0.9s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .data-status{display:flex;align-items:center;gap:16px;padding:7px 26px;font-family:var(--mono);font-size:11px;color:var(--muted);background:#0B0F16;border-top:1px solid var(--line)}
+  #ds-updated{color:var(--ink4)}
+  #ds-source .ok{color:var(--green)} #ds-source .warn{color:var(--gold)} #ds-source .bad{color:var(--red)}
+  #ds-errors{color:var(--muted)}
+  .data-banner{display:none;padding:11px 26px;font-size:12.5px;line-height:1.5;border-top:1px solid;border-bottom:1px solid}
+  .data-banner.show{display:block}
+  .data-banner.bad{background:rgba(255,92,108,.09);border-color:rgba(255,92,108,.3);color:#ffb3ba}
+  .data-banner.warn{background:rgba(232,179,61,.08);border-color:rgba(232,179,61,.3);color:#f0d089}
+  .data-banner b{color:var(--ink)}
+  .data-banner code{font-family:var(--mono);font-size:11.5px;background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px}
   .pill{border:1px solid rgba(232,179,61,.5);background:rgba(232,179,61,.1);color:var(--gold);border-radius:999px;padding:4px 13px;font-size:11px;letter-spacing:.1em;display:none;align-items:center;gap:7px}
   .pill::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--gold)}
   .pill.show{display:flex}
@@ -207,11 +222,22 @@
   <header>
     <div><h1 id="view-title">Market Overview</h1><div class="sub" id="view-sub"></div></div>
     <div class="head-right">
+      <button class="scan-btn" id="scan-btn" title="Pull fresh data from the market now">
+        <svg id="scan-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"/><path d="M21 3v6h-6"/></svg>
+        <span id="scan-btn-label">Scan market</span>
+      </button>
       <span class="mkt"><i class="dot" id="mkt-dot" style="background:var(--muted)"></i><span id="mkt-state">NYSE</span></span>
       <span id="clock">--:--:-- ET</span>
       <span class="pill" id="delay-pill">DELAYED</span>
     </div>
   </header>
+  <div class="data-status" id="data-status">
+    <span id="ds-updated">no data yet</span>
+    <span id="ds-source"></span>
+    <span id="ds-spacer" style="flex:1"></span>
+    <span id="ds-errors"></span>
+  </div>
+  <div class="data-banner" id="data-banner"></div>
   <div class="tape" id="tape"></div>
   <div class="content">
 
@@ -425,6 +451,8 @@ async function poll() {
     const data = await jget("/api/scan" + adv);
     S.rows = data.rows; S.meta = data.meta || {}; S.errors = data.errors || {};
     S.starred = data.starred || [];
+    S.status = data.status; S.scanning = !!data.scanning;
+    S.lastScanMs = data.last_scan_ms; S.scanCount = data.scan_count || 0;
     $("f-adv-err").textContent = "";
   } catch (e) {
     if (e && e.detail) { $("f-adv-err").textContent = e.detail; S.advOk = false; }
@@ -434,7 +462,7 @@ async function poll() {
   renderMeta(); renderTape(); renderOverview(); renderScanner(); renderWatchlistMini();
 }
 
-/* ── meta / tape ───────────────────────────────────────── */
+/* ── meta / tape / data provenance ─────────────────────── */
 function renderMeta() {
   const m = S.meta;
   const delayed = !!m.is_delayed;
@@ -446,6 +474,58 @@ function renderMeta() {
     $("prov-avatar").textContent = m.provider.slice(0, 2).toUpperCase();
     $("prov-plan").textContent = delayed ? "delayed feed" : "live feed";
   }
+
+  // scan button reflects live scanning state (driven by the background loop too)
+  const btn = $("scan-btn");
+  btn.classList.toggle("scanning", S.scanning);
+  btn.disabled = S.scanning;
+  $("scan-btn-label").textContent = S.scanning ? "Scanning…" : "Scan market";
+
+  // data-status bar: when was data last pulled, from where, how many symbols
+  const scanned = m.symbols_scanned, requested = m.symbols_requested;
+  if (m.as_of) {
+    const when = new Date(m.as_of);
+    const ago = Math.max(0, Math.round((Date.now() - when.getTime()) / 1000));
+    const agoTxt = ago < 60 ? `${ago}s ago` : `${Math.round(ago / 60)}m ago`;
+    $("ds-updated").textContent = `data pulled ${when.toLocaleTimeString()} (${agoTxt})`;
+    const took = S.lastScanMs ? ` · ${(S.lastScanMs / 1000).toFixed(1)}s` : "";
+    const cls = scanned === 0 ? "bad" : (scanned < requested ? "warn" : "ok");
+    $("ds-source").innerHTML =
+      `<span class="${cls}">${scanned}/${requested} symbols from ${esc(m.provider || "—")}${took}</span>`;
+  } else {
+    $("ds-updated").textContent = S.scanning ? "pulling market data…" : "no data yet";
+    $("ds-source").innerHTML = "";
+  }
+  const nErr = Object.keys(S.errors || {}).length;
+  $("ds-errors").textContent = nErr ? `${nErr} symbol${nErr > 1 ? "s" : ""} returned no data` : "";
+
+  renderDataBanner(scanned, requested);
+}
+
+// Loud, honest banner: the #1 reason the dashboard "looks like placeholders"
+// is the free feed silently returning nothing. Say so, and say what to do.
+function renderDataBanner(scanned, requested) {
+  const banner = $("data-banner");
+  const m = S.meta;
+  const provider = m.provider || "the data feed";
+  if (S.status && String(S.status).startsWith("scan failed")) {
+    banner.className = "data-banner bad show";
+    banner.innerHTML = `<b>Market pull failed.</b> ${esc(S.status)} — check your network, or configure a keyed feed in <code>.env</code> (Alpaca / Polygon) and restart with <code>--provider alpaca</code>.`;
+    return;
+  }
+  if (m.as_of && scanned === 0) {
+    banner.className = "data-banner bad show";
+    banner.innerHTML =
+      `<b>${esc(provider)} returned no data for any symbol.</b> This is a real fetch, not placeholder data — the free feed is likely rate-limiting or blocked on this machine. ` +
+      `Try <b>Scan market</b> again, or switch to a keyed real-time feed: put keys in <code>.env</code> and restart with <code>--provider alpaca</code> (IEX free / SIP paid) or <code>--provider polygon</code>.`;
+    return;
+  }
+  if (m.as_of && scanned < requested && (requested - scanned) >= Math.ceil(requested * 0.4)) {
+    banner.className = "data-banner warn show";
+    banner.innerHTML = `<b>${scanned} of ${requested} symbols returned data.</b> The rest were skipped (no/short history from ${esc(provider)}). Values shown are genuine for the symbols that loaded.`;
+    return;
+  }
+  banner.className = "data-banner";
 }
 function renderTape() {
   $("tape").innerHTML = S.tape.map(t =>
@@ -747,6 +827,24 @@ async function refreshSettings() {
     `default sort = ${esc(st.default_sort || "composite")}<br>` +
     `default filter = ${esc(st.default_filter || "(none)")}`;
 }
+
+/* ── manual scan ───────────────────────────────────────── */
+$("scan-btn").addEventListener("click", async () => {
+  if (S.scanning) return;
+  // optimistic: show scanning immediately, then poll fast until it lands
+  S.scanning = true; renderMeta();
+  const before = S.scanCount;
+  await jget2post("/api/rescan");
+  const started = Date.now();
+  const tick = async () => {
+    await poll();
+    const done = S.scanCount > before && !S.scanning;
+    if (!done && Date.now() - started < 120000) {
+      setTimeout(tick, 700);
+    }
+  };
+  setTimeout(tick, 700);
+});
 
 /* ── boot ──────────────────────────────────────────────── */
 route();

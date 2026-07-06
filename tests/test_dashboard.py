@@ -102,6 +102,41 @@ def test_tape_endpoint(tmp_path):
         assert tape[0]["label"] == "SPX"
 
 
+def test_scan_status_fields(tmp_path):
+    with make_client(tmp_path) as client:
+        data = wait_for_scan(client)
+        assert "scanning" in data and data["scanning"] is False
+        assert data["last_scan_ms"] is not None
+        assert data["scan_count"] >= 1
+
+
+def test_manual_rescan_triggers_new_scan(tmp_path):
+    calls = {"n": 0}
+
+    def counting_scan(*_a, **_k):
+        calls["n"] += 1
+        return fake_result()
+
+    from stockscan.web.server import create_app
+
+    req = ScanRequest(symbols=["AAA", "BBB"], timeframe=Timeframe.M5)
+    app = create_app(
+        req, AppConfig(), engines=[], interval=3600,
+        scan_fn=counting_scan, tape_fn=fake_tape,
+        library_path=tmp_path / "lib.json",
+    )
+    with TestClient(app) as client:
+        wait_for_scan(client)
+        first = calls["n"]
+        resp = client.post("/api/rescan").json()
+        assert resp["queued"] is True
+        # the forced pull runs on the background thread
+        deadline = time.time() + 5
+        while time.time() < deadline and calls["n"] <= first:
+            time.sleep(0.05)
+        assert calls["n"] > first
+
+
 def test_library_crud_and_persistence(tmp_path):
     with make_client(tmp_path) as client:
         wait_for_scan(client)

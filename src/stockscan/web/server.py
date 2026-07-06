@@ -59,6 +59,9 @@ class ScanCache:
         self._error: str | None = None
         self._tape: list[dict[str, Any]] = []
         self.history: deque[dict[str, Any]] = deque(maxlen=12)
+        self.scanning: bool = False
+        self.last_scan_ms: int | None = None
+        self.scan_count: int = 0
 
     def store(self, result: ScanResult | None, error: str | None = None) -> None:
         with self._lock:
@@ -71,6 +74,21 @@ class ScanCache:
         with self._lock:
             self._tape = tape
 
+    def set_scanning(self, scanning: bool, duration_ms: int | None = None) -> None:
+        with self._lock:
+            self.scanning = scanning
+            if duration_ms is not None:
+                self.last_scan_ms = duration_ms
+                self.scan_count += 1
+
+    def status_fields(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "scanning": self.scanning,
+                "last_scan_ms": self.last_scan_ms,
+                "scan_count": self.scan_count,
+            }
+
     def snapshot(self) -> tuple[ScanResult | None, str | None]:
         with self._lock:
             return self._result, self._error
@@ -81,8 +99,13 @@ class ScanCache:
 
     def payload(self, filter_expr: str | None) -> dict[str, Any]:
         result, error = self.snapshot()
+        status = self.status_fields()
         if result is None:
-            return {"rows": [], "errors": {}, "meta": {}, "status": error or "warming up"}
+            return {
+                "rows": [], "errors": {}, "meta": {},
+                "status": error or ("scanning…" if status["scanning"] else "warming up"),
+                **status,
+            }
         if filter_expr:
             try:
                 rows = apply_filter(result.rows, filter_expr)
@@ -91,6 +114,7 @@ class ScanCache:
             result = ScanResult(rows=rows, errors=result.errors, meta=result.meta)
         payload = result.to_json_dict()
         payload["status"] = error or "ok"
+        payload.update(status)
         return payload
 
 
@@ -287,20 +311,30 @@ def create_app(
     cache = ScanCache()
     library = Library(library_path)
     stop = threading.Event()
+    wake = threading.Event()  # set by /api/rescan to force an immediate pull
     # the dashboard filters client-side against the cache; fetch unfiltered
     base_req = replace(req, filter_expr="", limit=0)
 
+    def do_scan() -> None:
+        import time
+
+        cache.set_scanning(True)
+        started = time.monotonic()
+        try:
+            cache.store(scan_fn(base_req, cfg, engines=engines))
+        except Exception as exc:  # noqa: BLE001 — surfaced in /api/scan status
+            cache.store(None, error=f"scan failed: {type(exc).__name__}: {exc}")
+        try:
+            cache.store_tape(tape_fn(base_req, cfg))
+        except Exception:  # noqa: BLE001 — tape is decorative, never fatal
+            pass
+        cache.set_scanning(False, duration_ms=int((time.monotonic() - started) * 1000))
+
     def loop() -> None:
         while not stop.is_set():
-            try:
-                cache.store(scan_fn(base_req, cfg, engines=engines))
-            except Exception as exc:  # noqa: BLE001 — surfaced in /api/scan status
-                cache.store(None, error=f"scan failed: {type(exc).__name__}: {exc}")
-            try:
-                cache.store_tape(tape_fn(base_req, cfg))
-            except Exception:  # noqa: BLE001 — tape is decorative, never fatal
-                pass
-            stop.wait(interval)
+            do_scan()
+            wake.wait(interval)  # returns early when /api/rescan sets it
+            wake.clear()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -308,8 +342,16 @@ def create_app(
         thread.start()
         yield
         stop.set()
+        wake.set()
 
     app = FastAPI(title="stockscan dashboard", lifespan=lifespan)
+
+    @app.post("/api/rescan")
+    def api_rescan() -> dict[str, Any]:
+        """Force an immediate market pull + recompute (the Scan market button)."""
+        already = cache.status_fields()["scanning"]
+        wake.set()
+        return {"queued": True, "already_scanning": already}
 
     @app.get("/api/scan")
     def api_scan(filter: str | None = Query(default=None)) -> JSONResponse:  # noqa: A002
