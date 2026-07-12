@@ -145,3 +145,19 @@ def test_registry_wires_configs():
     assert get_provider("yfinance", cfg).capabilities.name == "yfinance"
     with pytest.raises(Exception, match="Unknown provider"):
         get_provider("bogus", cfg)
+
+
+def test_provider_instances_are_shared():
+    """Same config must reuse one instance so rate limiters span every fetch
+    in the process (scan loop + tape); different creds get fresh instances."""
+    from stockscan.config import AppConfig
+    from stockscan.providers import get_provider
+
+    cfg = AppConfig(polygon_api_key="p", alpaca_key_id="k", alpaca_secret="s")
+    a = get_provider("polygon", cfg)
+    b = get_provider("polygon", cfg)
+    assert a is b
+    assert a._limiter is b._limiter
+    other = get_provider("polygon", AppConfig(polygon_api_key="different"))
+    assert other is not a
+    assert get_provider("alpaca", cfg) is get_provider("alpaca", cfg)

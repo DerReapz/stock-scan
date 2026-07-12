@@ -65,6 +65,15 @@ def test_batched_normalized_output(provider):
     del now
 
 
+def test_prepost_flag_controls_premarket(provider):
+    """include_extended must reach yfinance as prepost — the pre-market switch."""
+    p, fake = provider
+    p.get_bars(["AAPL"], Timeframe.M5, 10, include_extended=True)
+    assert fake.calls[-1][1]["prepost"] is True
+    p.get_bars(["AAPL"], Timeframe.M5, 10, include_extended=False)
+    assert fake.calls[-1][1]["prepost"] is False
+
+
 def test_unknown_symbol_reports_error(provider):
     p, _ = provider
     frames, errors = p.get_bars(["AAPL", "NOPE"], Timeframe.M5, 40)

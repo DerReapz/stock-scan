@@ -178,6 +178,51 @@ class TestPineIntegration:
         assert result.exit_code != 0
 
 
+class TestDoctor:
+    def _patch_provider(self, monkeypatch, empty=False):
+        import stockscan.providers as providers_mod
+
+        class DocProvider(FakeProvider):
+            def get_bars(self, symbols, timeframe, lookback, *, include_extended=True):
+                if empty:
+                    return {}, {s: "no data returned" for s in symbols}
+                frames = {
+                    s: make_bars(
+                        60,
+                        timeframe=timeframe if not timeframe.is_intraday else timeframe,
+                        include_extended=timeframe.is_intraday,
+                        seed=5,
+                    )
+                    for s in symbols
+                }
+                return frames, {}
+
+        monkeypatch.setattr(providers_mod, "get_provider", lambda n, c: DocProvider())
+        monkeypatch.setattr(
+            providers_mod, "_INSTANCES", {}, raising=False
+        )
+
+    def test_doctor_reports_sessions_and_passes(self, monkeypatch):
+        self._patch_provider(monkeypatch)
+        from stockscan.cli import app
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["doctor", "--provider", "yfinance"])
+        assert result.exit_code == 0, result.output
+        assert "pre" in result.output and "rth" in result.output
+        assert "genuine market data" in result.output
+
+    def test_doctor_fails_loudly_on_empty_feed(self, monkeypatch):
+        self._patch_provider(monkeypatch, empty=True)
+        from stockscan.cli import app
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["doctor", "--provider", "yfinance"])
+        assert result.exit_code == 1
+        assert "no data" in result.output
+        assert "no provider returned data" in result.output
+
+
 def test_csv_export(cfg, tmp_path):
     from stockscan import output
 

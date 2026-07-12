@@ -25,7 +25,16 @@ uv run stockscan serve watchlists/default.txt --timeframe 5m --interval 60
 
 # see feed options and whether API keys are configured
 uv run stockscan providers
+
+# prove real market connectivity (daily + intraday incl. pre-market bars):
+uv run stockscan doctor
 ```
+
+`stockscan doctor` pulls genuine daily and 5-minute extended-hours bars per
+provider and reports what came back — bar counts, latest-bar timestamp and
+age, and the pre/RTH/post session breakdown — so you can verify in one
+command that real pre-market and open-market data is flowing (exit code 1 if
+no provider returns data).
 
 A watchlist is a text file with one symbol per line (`#` comments), or a
 comma-separated list passed directly on the command line.

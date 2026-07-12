@@ -69,7 +69,9 @@ class AlpacaProvider(MarketDataProvider):
             "timeframe": _TIMEFRAMES[timeframe],
             "start": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "limit": "10000",
-            "adjustment": "raw",
+            # split-adjusted matches TradingView charts; raw prices would put
+            # split gaps through every SMA/momentum/RSI window
+            "adjustment": "split",
             "feed": self.feed,
         }
         raw_bars: dict[str, list[dict]] = {s: [] for s in symbols}
