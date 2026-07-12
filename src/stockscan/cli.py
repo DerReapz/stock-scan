@@ -174,6 +174,94 @@ def serve(
 
 
 @app.command()
+def doctor(
+    symbol: Annotated[str, typer.Option("--symbol", help="Probe symbol")] = "AAPL",
+    provider: Annotated[
+        str | None, typer.Option("--provider", "-p", help="Test one provider (default: all usable)")
+    ] = None,
+    config: ConfigOpt = None,
+):
+    """Diagnose market-data connectivity: pulls real daily + intraday
+    (extended-hours) bars per provider and reports exactly what came back —
+    bar counts, pre/RTH/post session breakdown, and data freshness."""
+    import time as _time
+    from datetime import UTC, datetime
+
+    from .providers import get_provider
+    from .providers.base import NotConfiguredError
+
+    cfg = AppConfig.load(config)
+    names = [provider.lower()] if provider else ["yfinance", "alpaca", "polygon"]
+    any_ok = False
+
+    for name in names:
+        console.print(f"\n[bold]── {name} ──[/bold]")
+        try:
+            prov = get_provider(name, cfg)
+        except NotConfiguredError as exc:
+            console.print(f"  [yellow]skipped:[/yellow] {exc}")
+            continue
+        except Exception as exc:  # noqa: BLE001 — diagnostic output
+            console.print(f"  [red]setup failed:[/red] {type(exc).__name__}: {exc}")
+            continue
+
+        caps = prov.capabilities
+        console.print(
+            f"  feed class: {'delayed ~' + str(caps.delay_seconds // 60) + ' min' if caps.is_delayed else 'real-time'}"
+            + (f" · {caps.note}" if caps.note else "")
+        )
+
+        ok = True
+        for label, tf, lookback in (("daily", Timeframe.D1, 5), ("5m intraday", Timeframe.M5, 200)):
+            started = _time.monotonic()
+            try:
+                frames, errors = prov.get_bars([symbol], tf, lookback, include_extended=True)
+            except Exception as exc:  # noqa: BLE001 — diagnostic output
+                console.print(f"  [red]✗ {label}: {type(exc).__name__}: {exc}[/red]")
+                ok = False
+                continue
+            took = _time.monotonic() - started
+            bars = frames.get(symbol)
+            if bars is None or len(bars) == 0:
+                reason = errors.get(symbol, "no bars returned")
+                console.print(
+                    f"  [red]✗ {label}: no data ({reason}) — real fetch, empty answer. "
+                    f"The provider is blocking/rate-limiting or the symbol is wrong.[/red]"
+                )
+                ok = False
+                continue
+            last = bars.index[-1]
+            age_min = (datetime.now(UTC) - last.to_pydatetime()).total_seconds() / 60
+            line = (
+                f"  [green]✓[/green] {label}: {len(bars)} bars in {took:.1f}s · "
+                f"latest {last.tz_convert('America/New_York'):%Y-%m-%d %H:%M ET} "
+                f"({age_min:.0f} min old)"
+            )
+            if tf.is_intraday:
+                counts = bars["session"].value_counts()
+                line += (
+                    f" · sessions: {counts.get('pre', 0)} pre / "
+                    f"{counts.get('rth', 0)} rth / {counts.get('post', 0)} post"
+                )
+                if counts.get("pre", 0) or counts.get("post", 0):
+                    line += "  [green](extended-hours data flowing)[/green]"
+                else:
+                    line += "  [dim](no ETH bars in window — normal if none traded)[/dim]"
+            console.print(line)
+        any_ok = any_ok or ok
+
+    console.print()
+    if any_ok:
+        console.print("[bold green]Verdict: genuine market data is flowing.[/bold green]")
+    else:
+        console.print(
+            "[bold red]Verdict: no provider returned data.[/bold red] "
+            "Check network/firewall, or configure keys in .env (see .env.example)."
+        )
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def providers(config: ConfigOpt = None):
     """List data providers, capabilities, and whether keys are configured."""
     cfg = AppConfig.load(config)

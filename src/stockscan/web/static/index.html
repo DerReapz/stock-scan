@@ -436,9 +436,14 @@ function tickClock() {
   $("clock").textContent = `${parts.hour}:${parts.minute}:${parts.second} ET`;
   const mins = (+parts.hour) * 60 + (+parts.minute);
   const weekday = !["Sat", "Sun"].includes(parts.weekday);
+  // full session map: pre-market 04:00-09:30, RTH 09:30-16:00, after-hours 16:00-20:00 ET
   const open = weekday && mins >= 570 && mins < 960;
-  $("mkt-state").textContent = open ? "NYSE OPEN" : "NYSE CLOSED";
-  $("mkt-dot").style.background = open ? "var(--green)" : "var(--muted2)";
+  const pre = weekday && mins >= 240 && mins < 570;
+  const post = weekday && mins >= 960 && mins < 1200;
+  $("mkt-state").textContent =
+    open ? "NYSE OPEN" : pre ? "PRE-MARKET" : post ? "AFTER-HOURS" : "NYSE CLOSED";
+  $("mkt-dot").style.background =
+    open ? "var(--green)" : (pre || post) ? "var(--gold)" : "var(--muted2)";
 }
 setInterval(tickClock, 1000); tickClock();
 
